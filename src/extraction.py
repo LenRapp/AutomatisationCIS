@@ -3,16 +3,14 @@ import re
 import streamlit as st
 
 
-# --- FONCTION UTILITAIRE : Deviner le titre ---
 def detecter_technologie(first_page_text):
     text = first_page_text.lower()
     if "oracle" in text: return "Oracle Database"
     if "postgresql" in text: return "PostgreSQL"
-    if "cis controls" in text: return "CIS Controls (Général)"  # <--- AJOUT
+    if "cis controls" in text: return "CIS Controls (Général)"
     return "Technologie inconnue"
 
 
-# --- FONCTION PRINCIPALE ---
 def analyser_pdf_cis(fichier_pdf):
     resultats = []
 
@@ -34,7 +32,6 @@ def analyser_pdf_cis(fichier_pdf):
                 for ligne in lignes:
                     ligne = ligne.strip()
 
-                    # REGEX : Capture "Safeguard 1.1" ou "1.1.1"
                     match = re.search(r"^(\d+\.\d+(\.\d+)?|Safeguard \d+\.\d+)(:| )(.+)", ligne)
 
                     if match:
@@ -43,10 +40,9 @@ def analyser_pdf_cis(fichier_pdf):
                             regle_actuelle["description"] = regle_actuelle["description"].strip()
                             resultats.append(regle_actuelle)
 
-                        # Création de la règle
                         regle_actuelle = {
                             "database_type": type_db_detecte,
-                            "cis_benchmark_version": "Inconnue",  # Difficile à choper auto
+                            "cis_benchmark_version": "Inconnue",
                             "control_id": match.group(1),
                             "title": match.group(4).strip(),
                             "description": "",
@@ -56,10 +52,7 @@ def analyser_pdf_cis(fichier_pdf):
                             "page": i + 1
                         }
                         continue
-
-                    # REMPLISSAGE INTELLIGENT
                     if regle_actuelle:
-                        # --- FILTRAGE DU BRUIT (Nettoyage Description) ---
                         # Si la ligne contient ces mots, on ne l'ajoute pas à la description
                         # mais on essaie d'en extraire des infos utiles
                         if "Asset Type:" in ligne or "Security Function:" in ligne:
@@ -77,8 +70,6 @@ def analyser_pdf_cis(fichier_pdf):
                         # Ignore les barres verticales seules ou les en-têtes de bas de page
                         if ligne in ["|", "| |", "| | |"] or "Controls and Safeguards Index" in ligne:
                             continue
-
-                        # --- Remplissage Classique ---
                         if ligne.startswith("Rationale:"):
                             section_en_cours = "rationale"
                             continue
@@ -102,7 +93,7 @@ def analyser_pdf_cis(fichier_pdf):
     return resultats
 
 
-# --- FONCTION LECTURE BRUTE (Inchangée) ---
+# FONCTION LECTURE BRUTE
 def recuperer_tout_le_texte(fichier_pdf):
     texte_complet = ""
     try:
