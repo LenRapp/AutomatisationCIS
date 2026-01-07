@@ -2,62 +2,93 @@ import pdfplumber
 import re
 import streamlit as st
 
-# FONCTION 1 : Analyse intelligente
+
+# --- FONCTION 1 : Analyse Hybride (Compatible Patron) ---
 def analyser_pdf_cis(fichier_pdf):
-    """Extrait les règles Safeguard structurées."""
+    """
+    Extrait les règles en format JSON complet (Benchmark ou Controls).
+    """
     resultats = []
+
+    # Valeurs par défaut (à adapter plus tard dynamiquement)
+    TYPE_DB = "Oracle Database"
+    VERSION_CIS = "1.1"
+
     try:
         with pdfplumber.open(fichier_pdf) as pdf:
+            # On lit page par page
             for i, page in enumerate(pdf.pages):
                 texte = page.extract_text()
                 if not texte: continue
+
                 lignes = texte.split('\n')
                 regle_actuelle = None
+                section_en_cours = "description"  # description, rationale, impact...
+
                 for ligne in lignes:
                     ligne = ligne.strip()
-                    match = re.search(r"^(Safeguard \d+\.\d+):(.+)", ligne)
+
+                    # --- LA CORRECTION EST ICI (REGEX HYBRIDE) ---
+                    # Accepte "Safeguard 1.1" OU "1.1.1"
+                    match = re.search(r"^(\d+\.\d+(\.\d+)?|Safeguard \d+\.\d+)(:| )(.+)", ligne)
+
                     if match:
-                        if regle_actuelle: resultats.append(regle_actuelle)
+                        # On sauvegarde la règle d'avant
+                        if regle_actuelle:
+                            resultats.append(regle_actuelle)
+
+                        # On crée la nouvelle règle avec TOUS les champs du patron
                         regle_actuelle = {
-                            "page": i + 1,
-                            "code": match.group(1),
-                            "titre": match.group(2).strip(),
-                            "description": ""
+                            "database_type": TYPE_DB,
+                            "cis_benchmark_version": VERSION_CIS,
+                            "control_id": match.group(1),  # Ex: 1.1.1
+                            "title": match.group(4).strip(),  # Ex: Ensure remote login...
+                            "description": "",
+                            "severity": "Unknown",  # Sera mis à jour si trouvé
+                            "rationale": "",
+                            "impact": "",
+                            "page": i + 1
                         }
+                        section_en_cours = "description"
                         continue
+
+                    # --- REMPLISSAGE INTELLIGENT ---
                     if regle_actuelle:
-                        if any(x in ligne for x in
-                               ["Asset Type:", "Security Function:", "IG1", "CIS Controls", "Control"]):
+                        # Détection des mots-clés pour changer de case
+                        if ligne.startswith("Rationale:"):
+                            section_en_cours = "rationale"
                             continue
-                        if len(ligne) > 5:
-                            regle_actuelle["description"] += " " + ligne
-                if regle_actuelle: resultats.append(regle_actuelle)
+                        elif ligne.startswith("Impact:"):
+                            section_en_cours = "impact"
+                            continue
+                        elif "Level 1" in ligne:
+                            regle_actuelle["severity"] = "Level 1"
+                        elif "Level 2" in ligne:
+                            regle_actuelle["severity"] = "Level 2"
+
+                        # On remplit la bonne case selon la section active
+                        if section_en_cours in regle_actuelle:
+                            regle_actuelle[section_en_cours] += " " + ligne
+
+                # Ne pas oublier la dernière règle
+                if regle_actuelle:
+                    resultats.append(regle_actuelle)
+
     except Exception as e:
-        st.error(f"Erreur : {e}")
+        st.error(f"Erreur extraction : {e}")
+        return []
+
     return resultats
 
 
-# FONCTION 2 : Extraction brute
+# --- FONCTION 2 : Lecture Brute (Inchangée) ---
 def recuperer_tout_le_texte(fichier_pdf):
-    """Extrait tout le texte brut du PDF."""
     texte_complet = ""
     try:
         with pdfplumber.open(fichier_pdf) as pdf:
-            # Barre de progression
-            barre_progression = st.progress(0)
-            total_pages = len(pdf.pages)
-
             for i, page in enumerate(pdf.pages):
-                contenu_page = page.extract_text()
-                if contenu_page:
-                    texte_complet += f"\n\n--- PAGE {i + 1} ---\n"
-                    texte_complet += contenu_page
-
-                # Mise à jour de la barre
-                barre_progression.progress((i + 1) / total_pages)
-
-            barre_progression.empty()  # On efface la barre
-    except Exception as e:
-        st.error(f"Erreur lecture brute : {e}")
-        return ""
+                c = page.extract_text()
+                if c: texte_complet += f"\n--- P {i + 1} ---\n{c}"
+    except:
+        pass
     return texte_complet

@@ -1,8 +1,8 @@
 import streamlit as st
 from src.extraction import recuperer_tout_le_texte, analyser_pdf_cis
-from src.generator import convertir_en_json  # <--- Nouvel import
+from src.generator import convertir_en_json
 
-# 1. Configuration
+# 1. Configuration de la page
 st.set_page_config(page_title="Extracteur PDF", page_icon="📄")
 
 # Initialisation de l'état pour stocker les données JSON entre les rechargements
@@ -27,10 +27,10 @@ def main():
     if uploaded_file is not None:
         st.success(f"✅ Fichier chargé : **{uploaded_file.name}**")
 
-        # On ajoute le 3ème onglet "Export JSON"
+        # On crée les 3 onglets
         tab1, tab2, tab3 = st.tabs(["📝 Texte Brut", "🔍 Analyse IA", "💾 Export JSON"])
 
-        # ONGLET 1 : Texte Brut
+        # --- ONGLET 1 : Texte Brut ---
         with tab1:
             st.write("Récupère l'intégralité du texte du document.")
 
@@ -49,14 +49,22 @@ def main():
                     mime="text/plain"
                 )
 
-        # ONGLET 2 : Analyse
+        # --- ONGLET 2 : Analyse Rapide ---
         with tab2:
+            st.write("Vérification rapide du nombre de règles détectées.")
             if st.button("Lancer l'analyse structurée"):
                 uploaded_file.seek(0)
                 regles = analyser_pdf_cis(uploaded_file)
-                st.write(f"{len(regles)} règles trouvées.")
 
-        # ONGLET 3 : Export JSON
+                if regles:
+                    st.success(f"✅ {len(regles)} règles trouvées.")
+                    # Petit aperçu rapide
+                    with st.expander("Voir la première règle détectée"):
+                        st.write(regles[0])
+                else:
+                    st.warning("⚠️ Aucune règle détectée. Vérifiez le format du PDF.")
+
+        # --- ONGLET 3 : Export JSON (AMÉLIORÉ) ---
         with tab3:
             st.header("Export des données")
             st.write("Générez un fichier JSON structuré contenant toutes les règles extraites.")
@@ -65,18 +73,28 @@ def main():
                 with st.spinner('Analyse et conversion en cours...'):
                     uploaded_file.seek(0)
                     regles = analyser_pdf_cis(uploaded_file)
-                    st.session_state.json_data = regles  # Stockage dans la session
 
-            # Si des données sont présentes en session
+                    # C'est ici que la logique est améliorée :
+                    if not regles:
+                        st.error("⚠️ Erreur : Aucune règle n'a été trouvée dans ce document.")
+                        st.info(
+                            "Conseil : Vérifiez dans l'onglet 'Texte Brut' si le texte ressemble bien à un Benchmark CIS (ex: '1.1.1 Titre').")
+                        st.session_state.json_data = None
+                    else:
+                        st.success(f"✅ Succès ! {len(regles)} règles sont prêtes à être exportées.")
+                        st.session_state.json_data = regles  # Stockage dans la session
+
+            # Si des données sont présentes en session, on affiche le téléchargement
             if st.session_state.json_data:
                 st.subheader("Aperçu des données")
-                st.json(st.session_state.json_data)
+                # On montre juste les 3 premiers éléments pour garder l'écran propre
+                st.json(st.session_state.json_data[:3])
 
-                # Utilisation de la fonction du module src/generator.py
+                # Conversion finale en texte JSON
                 json_str = convertir_en_json(st.session_state.json_data)
 
                 st.download_button(
-                    label="📥 Télécharger le fichier JSON",
+                    label="📥 TÉLÉCHARGER LE FICHIER JSON",
                     data=json_str,
                     file_name="resultats_analyse.json",
                     mime="application/json"
