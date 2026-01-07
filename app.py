@@ -27,10 +27,9 @@ def main():
     if uploaded_file is not None:
         st.success(f"✅ Fichier chargé : **{uploaded_file.name}**")
 
-        # On crée les 3 onglets
         tab1, tab2, tab3 = st.tabs(["📝 Texte Brut", "🔍 Analyse IA", "💾 Export JSON"])
 
-        # --- ONGLET 1 : Texte Brut ---
+        # 1 : Texte Brut
         with tab1:
             st.write("Récupère l'intégralité du texte du document.")
 
@@ -49,7 +48,7 @@ def main():
                     mime="text/plain"
                 )
 
-        # --- ONGLET 2 : Analyse Rapide ---
+        # 2 : Analyse Rapide
         with tab2:
             st.write("Vérification rapide du nombre de règles détectées.")
             if st.button("Lancer l'analyse structurée"):
@@ -64,7 +63,7 @@ def main():
                 else:
                     st.warning("⚠️ Aucune règle détectée. Vérifiez le format du PDF.")
 
-        # --- ONGLET 3 : Export JSON (AMÉLIORÉ) ---
+        # 3 : Export JSON
         with tab3:
             st.header("Export des données")
             st.write("Générez un fichier JSON structuré contenant toutes les règles extraites.")
@@ -74,7 +73,6 @@ def main():
                     uploaded_file.seek(0)
                     regles = analyser_pdf_cis(uploaded_file)
 
-                    # C'est ici que la logique est améliorée :
                     if not regles:
                         st.error("⚠️ Erreur : Aucune règle n'a été trouvée dans ce document.")
                         st.info(
@@ -99,7 +97,6 @@ def main():
                     file_name="resultats_analyse.json",
                     mime="application/json"
                 )
-
 
 if __name__ == "__main__":
     main()
