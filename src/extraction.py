@@ -3,12 +3,23 @@ import re
 import streamlit as st
 
 
-def detecter_technologie(first_page_text):
-    text = first_page_text.lower()
-    if "oracle" in text: return "Oracle Database"
-    if "postgresql" in text: return "PostgreSQL"
-    if "cis controls" in text: return "CIS Controls (Général)"
-    return "Technologie inconnue"
+def detecter_technologie(text_page_garde):
+        #on enlève les sauts de ligne bizarres pour faciliter la recherche
+        texte_clean = text_page_garde.replace('\n', ' ')
+
+        # re.IGNORECASE permet de ne pas se soucier des majuscules/minuscules
+        match = re.search(r"CIS\s+(.+?)\s+Benchmark", texte_clean, re.IGNORECASE)
+
+        if match:
+            nom_complet = match.group(1).strip()
+
+            # Si le nom est très long (plus de 50 caractères),
+            # c'est peut-être une erreur de lecture, on garde juste les 3 premiers mots.
+            if len(nom_complet) > 60:
+                 mots = nom_complet.split()
+                 return " ".join(mots[:4])
+            return nom_complet
+        return "Technologie Inconnue"
 
 
 def analyser_pdf_cis(fichier_pdf):
@@ -16,11 +27,12 @@ def analyser_pdf_cis(fichier_pdf):
 
     try:
         with pdfplumber.open(fichier_pdf) as pdf:
-            # 1. DÉTECTION GLOBALE
             page_garde = pdf.pages[0].extract_text() if len(pdf.pages) > 0 else ""
             type_db_detecte = detecter_technologie(page_garde)
 
-            # 2. ANALYSE DES PAGES
+            match_version = re.search(r"v(\d+\.\d+(\.\d+)?)", page_garde)
+            version_cis = match_version.group(1) if match_version else "1.0"
+
             for i, page in enumerate(pdf.pages):
                 texte = page.extract_text()
                 if not texte: continue
@@ -32,17 +44,22 @@ def analyser_pdf_cis(fichier_pdf):
                 for ligne in lignes:
                     ligne = ligne.strip()
 
+                    # DÉTECTION D'UN NOUVEAU TITRE
+                    # Accepte "1.1.1 Titre" OU "Safeguard 1.1 Titre"
                     match = re.search(r"^(\d+\.\d+(\.\d+)?|Safeguard \d+\.\d+)(:| )(.+)", ligne)
 
                     if match:
+                        # SAUVEGARDE DE LA RÈGLE PRÉCÉDENTE
                         if regle_actuelle:
-                            # Petit nettoyage final de la description avant d'enregistrer
-                            regle_actuelle["description"] = regle_actuelle["description"].strip()
-                            resultats.append(regle_actuelle)
+                            if regle_actuelle["severity"] != "Unknown":
+                                regle_actuelle["description"] = regle_actuelle["description"].strip()
+                                # On nettoie le titre
+                                regle_actuelle["title"] = re.sub(r"\.+\s*\d+$", "", regle_actuelle["title"]).strip()
+                                resultats.append(regle_actuelle)
 
                         regle_actuelle = {
                             "database_type": type_db_detecte,
-                            "cis_benchmark_version": "Inconnue",
+                            "cis_benchmark_version": version_cis,
                             "control_id": match.group(1),
                             "title": match.group(4).strip(),
                             "description": "",
@@ -51,39 +68,44 @@ def analyser_pdf_cis(fichier_pdf):
                             "impact": "",
                             "page": i + 1
                         }
+                        section_en_cours = "description"
                         continue
+
+                    # REMPLISSAGE DES CHAMPS
                     if regle_actuelle:
-                        # Si la ligne contient ces mots, on ne l'ajoute pas à la description
-                        # mais on essaie d'en extraire des infos utiles
-                        if "Asset Type:" in ligne or "Security Function:" in ligne:
-                            # On tente de récupérer les IG (IG1, IG2, IG3) pour la sévérité
-                            igs = []
-                            if "IG1" in ligne: igs.append("IG1")
-                            if "IG2" in ligne: igs.append("IG2")
-                            if "IG3" in ligne: igs.append("IG3")
+                        if "Level 1" in ligne:
+                            regle_actuelle["severity"] = "Medium (Level 1)"
+                        elif "Level 2" in ligne:
+                            regle_actuelle["severity"] = "High (Level 2)"
 
-                            if igs:
-                                regle_actuelle["severity"] = ", ".join(igs)
+                        elif "IG1" in ligne:
+                            regle_actuelle["severity"] = "IG1"
+                        elif "IG2" in ligne:
+                            regle_actuelle["severity"] = "IG2"
+                        elif "IG3" in ligne:
+                            regle_actuelle["severity"] = "IG3"
 
-                            continue  # On passe à la ligne suivante sans l'ajouter au texte
-
-                        # Ignore les barres verticales seules ou les en-têtes de bas de page
-                        if ligne in ["|", "| |", "| | |"] or "Controls and Safeguards Index" in ligne:
-                            continue
                         if ligne.startswith("Rationale:"):
                             section_en_cours = "rationale"
                             continue
                         elif ligne.startswith("Impact:"):
                             section_en_cours = "impact"
                             continue
+                        elif ligne.startswith("Audit:"):
+                            section_en_cours = "audit"
+                            continue
+                        elif "Profile Applicability" in ligne:
+                            continue
 
-                        # Ajout du texte
-                        if section_en_cours in regle_actuelle:
-                            # On ajoute un espace seulement si nécessaire
-                            regle_actuelle[section_en_cours] += " " + ligne
+                        if section_en_cours in ["description", "rationale", "impact"]:
+                            # On évite d'ajouter des numéros de page ou des lignes vides
+                            if len(ligne) > 3 and not ligne.startswith("Page"):
+                                regle_actuelle[section_en_cours] += " " + ligne
 
-                if regle_actuelle:
+                # N'oublie pas la dernière règle du fichier !
+                if regle_actuelle and regle_actuelle["severity"] != "Unknown":
                     regle_actuelle["description"] = regle_actuelle["description"].strip()
+                    regle_actuelle["title"] = re.sub(r"\.+\s*\d+$", "", regle_actuelle["title"]).strip()
                     resultats.append(regle_actuelle)
 
     except Exception as e:
@@ -93,7 +115,6 @@ def analyser_pdf_cis(fichier_pdf):
     return resultats
 
 
-# FONCTION LECTURE BRUTE
 def recuperer_tout_le_texte(fichier_pdf):
     texte_complet = ""
     try:
