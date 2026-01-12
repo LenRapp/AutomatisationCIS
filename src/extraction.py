@@ -125,3 +125,52 @@ def recuperer_tout_le_texte(fichier_pdf):
     except:
         pass
     return texte_complet
+
+'''
+import json
+import sys
+
+def audit_qualite_json(fichier_json):
+    
+    print(f"--- 🔍 Audit Qualité : {fichier_json} ---")
+    
+    try:
+        with open(fichier_json, 'r', encoding='utf-8') as f:
+            regles = json.load(f)
+    except Exception as e:
+        print(f"❌ Erreur lecture JSON : {e}")
+        return
+
+    total = len(regles)
+    print(f"📊 Nombre de règles trouvées : {total}")
+    
+
+
+    for regle in regles:
+        id_r = regle.get("control_id", "???")
+        
+        # Test 1 : Description vide
+        if not regle.get("description", "").strip():
+            print(f"   ⚠️ [{id_r}] Description vide !")
+            erreurs += 1
+            
+        # Test 2 : Severity Unknown
+        if regle.get("severity") == "Unknown":
+            print(f"   ⚠️ [{id_r}] Sévérité Inconnue !")
+            erreurs += 1
+
+        titre = regle.get("title", "")
+        if "...." in titre or len(titre) < 5:
+            print(f"   ⚠️ [{id_r}] Titre mal nettoyé : '{titre}'")
+            erreurs += 1
+
+    if erreurs == 0:
+        print("\n✅ Audit contenu : Aucune anomalie détectée.")
+    else:
+        print(f"\n❌ Audit contenu : {erreurs} anomalies à corriger.")
+
+if __name__ == "__main__":
+    if len(sys.argv) > 1:
+        audit_qualite_json(sys.argv[1])
+    else:
+        print("Usage: python quality_check.py <chemin_vers_resultats.json>")'''
