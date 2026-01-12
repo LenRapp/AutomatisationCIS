@@ -13,6 +13,18 @@ if 'json_data' not in st.session_state:
 def main():
     st.title("🛡️ CIS Benchmark - Assistant d'Audit")
     st.write("Charge ton fichier PDF ci-dessous pour lancer l'analyse et la validation.")
+
+    # --- SIDEBAR CONFIGURATION (Developer B) ---
+    st.sidebar.title("⚙️ Configuration")
+    st.sidebar.info("Connectez votre Assistant IA pour une analyse avancée.")
+    
+    api_key = st.sidebar.text_input("🔑 Clé API Copilot / Azure", type="password", help="Entrez votre clé API pour activer l'analyse IA.")
+    
+    if not api_key:
+        st.sidebar.warning("⚠️ Clé API manquante. L'analyse se fera uniquement par Regex.")
+    else:
+        st.sidebar.success("✅ Clé API configurée.")
+
     st.markdown("---")
 
     # --- ZONE D'UPLOAD (Au centre) ---
@@ -59,16 +71,45 @@ def main():
                 bouton_analyse = st.button("🚀 LANCER L'ANALYSE", type="primary")
 
             if bouton_analyse:
-                with st.spinner('Extraction et structuration des règles...'):
+                # Barre de progression (Developer B Task 2)
+                progress_text = "Démarrage de l'analyse..."
+                my_bar = st.progress(0, text=progress_text)
+
+                try:
+                    # Étape 1 : Lecture
+                    my_bar.progress(10, text="Lecture du fichier PDF...")
                     uploaded_file.seek(0)
+                    
+                    # Étape 2 : Extraction (Simulation de temps si IA)
+                    my_bar.progress(30, text="Extraction des structures (Regex)...")
+                    
+                    # Si on avait l'IA ici, on ferait des appels API
+                    if api_key:
+                         my_bar.progress(50, text="🤖 Analyse Copilot en cours (Enrichissement)...")
+                         # Placeholder pour futur appel IA
+                    
                     regles = analyser_pdf_cis(uploaded_file)
+                    
+                    my_bar.progress(80, text="Structuration des données...")
 
                     if not regles:
+                        my_bar.empty()
                         st.error("⚠️ Aucune règle trouvée. Vérifie le format du PDF.")
                         st.session_state.json_data = None
                     else:
+                        my_bar.progress(100, text="Terminé !")
                         st.session_state.json_data = regles
                         st.rerun()  # Rafraichit la page
+                
+                except Exception as e:
+                    my_bar.empty()
+                    st.error(f"❌ Une erreur critique est survenue : {e}")
+                    # Gestion d'erreurs API (Task 4)
+                    if "Quota" in str(e):
+                        st.warning("💡 Conseil : Vérifiez vos quotas API Copilot/OpenAI.")
+                    elif "Server" in str(e):
+                         st.warning("💡 Conseil : Le serveur API semble instable. Réessayez plus tard.")
+
 
             # Affichage des résultats si disponibles
             if st.session_state.json_data:
