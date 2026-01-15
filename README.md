@@ -3,6 +3,15 @@
 Outil professionnel d'extraction et de structuration des règles de sécurité CIS (Center for Internet Security) à partir de fichiers PDF.
    
 ## 🚀 Installation rapide
+
+Création de l'environnement virtuel (.venv)
+```bash
+python3 -m venv .venv
+```
+Activation de l'environnement
+```bash
+source .venv/bin/activate
+```
   
 Ouvrez un terminal dans le dossier du projet et installez les dépendances :
   ```bash
