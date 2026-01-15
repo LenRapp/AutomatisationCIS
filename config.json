@@ -1,0 +1,40 @@
+{
+    "pdf_extraction": {
+        "rule_start_regex": "^(\\d+\\.\\d+(\\.\\d+)?|Safeguard \\d+\\.\\d+)(:| )(.+)",
+        "severity_keywords": {
+            "Level 1": "Level 1",
+            "Level 2": "Level 2",
+            "L1": "Level 1",
+            "L2": "Level 2",
+            "IG1": "IG1",
+            "IG2": "IG2",
+            "IG3": "IG3",
+            "Scored": "Scored",
+            "Not Scored": "Not Scored"
+        },
+        "section_keywords": {
+            "Description:": "description",
+            "Rationale:": "rationale",
+            "Impact:": "impact",
+            "Audit:": "audit",
+            "Audit Procedure:": "audit",
+            "Remediation:": "remediation",
+            "Default Value:": "description",
+            "Profile Applicability": "ignore"
+        },
+        "default_section": "description"
+    },
+    "consolidation_mapping": {
+        "source_folder": "inputs_json",
+        "output_file": "resume_cis_intermediaire.json",
+        "required_fields": {
+            "id": ["control_id", "id"],
+            "title": ["title", "name"],
+            "severity": ["severity", "level"],
+            "description": ["description", "desc"],
+            "rationale": ["rationale"],
+            "impact": ["impact"],
+            "remediation": ["remediation", "fix"]
+        }
+    }
+}
