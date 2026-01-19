@@ -1,141 +1,228 @@
 import streamlit as st
 from src.extraction import analyser_pdf_cis
-from src.comparator import compare_rules
+
+# --- ADAPTATEUR BACKEND (PONT ENTRE UI ET LOGIC) ---
+try:
+    from src.comparator import compare_rules
+    
+    def compare_data_adapter(data1, data2):
+        """
+        Adapte la sortie de compare_rules (format collègue)
+        au format attendu par l'interface actuelle.
+        """
+        # 1. Appel de la fonction du collègue
+        raw = compare_rules(data1, data2)
+        
+        # 2. Transformation pour l'UI
+        # L'UI attend : {'added': [...], 'removed': [...], 'modified': [{'old':..., 'new':...}]}
+        # Le collègue renvoie : {'added': [...], 'deleted': [...], 'modified': [{'changes':...}]}
+        
+        adapted_modified = []
+        for mod in raw.get('modified', []):
+            # On essaie de reconstruire un objet old/new simpliste pour l'affichage
+            changes = mod.get('changes', {})
+            
+            # Extraction intelligente des valeurs (si pas de changement, on met "Inchangé")
+            old_sev = changes.get('severity', {}).get('old', 'Inchangé')
+            new_sev = changes.get('severity', {}).get('new', 'Inchangé')
+            
+            old_title = changes.get('title', {}).get('old', 'Inchangé')
+            new_title = changes.get('title', {}).get('new', mod.get('control_id')) # Fallback sur l'ID si titre inchangé
+
+            # On crée des objets fictifs pour l'affichage
+            old_fake = {'severity': old_sev, 'title': old_title}
+            new_fake = {'severity': new_sev, 'title': new_title}
+            
+            adapted_modified.append({
+                "control_id": mod.get('control_id'),
+                "old": old_fake,
+                "new": new_fake,
+                "changes": changes # On passe les vrais changements à l'UI
+            })
+            
+        return {
+            "added": raw.get('added', []),
+            "removed": raw.get('deleted', []), # Mapping deleted -> removed
+            "modified": adapted_modified,
+            "stats": {
+                "count1": len(data1),
+                "count2": len(data2),
+                "added_count": len(raw.get('added', [])),
+                "removed_count": len(raw.get('deleted', [])),
+                "modified_count": len(raw.get('modified', []))
+            }
+        }
+        
+    # On utilise l'adaptateur comme fonction principale
+    compare_data = compare_data_adapter
+
+except ImportError:
+    compare_data = None
+
+
 import json
 import concurrent.futures
 
 st.set_page_config(page_title="Comparateur CIS", page_icon="⚡", layout="wide")
 
-# Initialize session state
 if 'comparison_data' not in st.session_state:
     st.session_state.comparison_data = None
-if 'active_tab' not in st.session_state:
-    st.session_state.active_tab = 'added' # Default active tab
 
-def process_file(file):
-    """Wrapper function for PDF processing."""
-    file.seek(0) # Reset file pointer
-    return analyser_pdf_cis(file)
+# OPTIMISATION : Mise en cache de l'extraction
+# Streamlit ne relancera pas la fonction si le contenu du fichier (les octets) n'a pas changé.
+@st.cache_data(show_spinner=False)
+def get_cached_extraction(file_content, file_name):
+    """
+    Fonction wrapper pour mettre en cache le résultat de l'extraction.
+    On passe le contenu en bytes car l'objet file_uploader n'est pas stable pour le cache.
+    """
+    import io
+    # On recrée un fichier virtuel en mémoire pour pdfplumber
+    virtual_file = io.BytesIO(file_content)
+    virtual_file.name = file_name
+    return analyser_pdf_cis(virtual_file)
+
+def process_file_wrapper(uploaded_file):
+    """Prépare les données pour la fonction mise en cache."""
+    # On lit les bytes une fois pour toutes
+    bytes_data = uploaded_file.getvalue()
+    return get_cached_extraction(bytes_data, uploaded_file.name)
 
 def main():
-    st.title("⚡ Comparateur de Benchmarks CIS")
+    st.title("⚡ Comparateur CIS - Interface UI")
+    
+    def clean_text(text):
+        """Nettoie le texte pour l'affichage (supprime les sauts de ligne et espaces superflus)."""
+        if not isinstance(text, str):
+            return str(text)
+        # Remplace les retours à la ligne par des espaces et réduit les espaces multiples
+        cleaned = " ".join(text.split())
+        return cleaned
 
     def clear_state():
-        """Resets the session state."""
         st.session_state.comparison_data = None
-        st.session_state.active_tab = 'added'
 
-    # --- UI for File Upload ---
+    # 1. ZONE UPLOAD (Unique et Multi-fichiers)
     uploaded_files = st.file_uploader(
-        "Déposez vos deux fichiers PDF CIS (un fichier de référence et un fichier cible)",
-        type="pdf",
-        accept_multiple_files=True,
+        "Déposez vos fichiers PDF CIS (1 pour extraction, 2 pour comparaison)", 
+        type="pdf", 
+        accept_multiple_files=True, 
         on_change=clear_state
     )
 
-    # --- LOGIC for Processing Files ---
+    # LOGIQUE DE DECISION DES MODES
     if len(uploaded_files) == 2:
         file1, file2 = uploaded_files
-        st.info(f"Fichier de référence (Ancien): **{file1.name}** | Fichier cible (Nouveau): **{file2.name}**")
+        st.info(f"🚀 Mode Comparaison prêt : **{file1.name}** vs **{file2.name}**")
+        
+        if st.button("🚀 LANCER LA COMPARAISON", type="primary"):
+            if compare_data is None:
+                st.error("Module de comparaison introuvable dans src/comparator.py (vérifiez le nom de la fonction)")
+                return
 
-        if st.button("🚀 Lancer la Comparaison", type="primary", use_container_width=True):
-            progress_placeholder = st.empty()
-            with st.spinner("Analyse des documents en cours..."):
+            with st.spinner("Analyse différentielle en cours..."):
                 with concurrent.futures.ThreadPoolExecutor() as executor:
-                    progress_placeholder.info(f"Étape 1/4 : Lancement de l'extraction pour {file1.name} et {file2.name}...")
-                    future1 = executor.submit(process_file, file1)
-                    future2 = executor.submit(process_file, file2)
-
-                    progress_placeholder.info(f"Étape 2/4 : En attente de la fin de l'extraction pour {file1.name}...")
-                    data1 = future1.result()
-                    progress_placeholder.info(f"-> Terminé pour {file1.name}. {len(data1) if data1 else 0} règles trouvées.")
-
-                    progress_placeholder.info(f"Étape 3/4 : En attente de la fin de l'extraction pour {file2.name}...")
-                    data2 = future2.result()
-                    progress_placeholder.info(f"-> Terminé pour {file2.name}. {len(data2) if data2 else 0} règles trouvées.")
-
+                    f1 = executor.submit(process_file_wrapper, file1)
+                    f2 = executor.submit(process_file_wrapper, file2)
+                    data1 = f1.result()
+                    data2 = f2.result()
+                
                 if data1 and data2:
-                    progress_placeholder.info("Étape 4/4 : Comparaison des ensembles de règles...")
-                    comparison_result = compare_rules(data1, data2)
-                    
-                    # Add stats to the result for easier access in the UI
-                    comparison_result['stats'] = {
-                        'added': len(comparison_result['added']),
-                        'deleted': len(comparison_result['deleted']),
-                        'modified': len(comparison_result['modified'])
-                    }
-                    st.session_state.comparison_data = comparison_result
-                    progress_placeholder.empty() # Clear progress messages
-                    st.success("Analyse comparative terminée !")
+                    st.session_state.comparison_data = compare_data(data1, data2)
+                    st.success("Comparaison terminée !")
                 else:
-                    st.error("L'extraction des données a échoué pour au moins un des fichiers. Assurez-vous qu'ils sont valides.")
+                    st.error("Erreur lors de l'extraction des PDF.")
 
     elif len(uploaded_files) == 1:
-        st.warning("Mode simple fichier : Affiche les règles extraites. Pour comparer, déposez un second fichier.")
-        # Simplified display for single file extraction
-        if st.button("🔍 Extraire les règles du document", use_container_width=True):
-             with st.spinner("Analyse du document en cours..."):
-                data = process_file(uploaded_files[0])
+        file1 = uploaded_files[0]
+        st.info(f"📄 Mode Extraction Simple : **{file1.name}**")
+        
+        if st.button("🚀 LANCER L'EXTRACTION", type="primary"):
+            with st.spinner("Extraction des règles..."):
+                data = process_file_wrapper(file1)
                 if data:
                     st.session_state.comparison_data = {"single_mode": True, "data": data}
-                    st.success(f"Extraction terminée : {len(data)} règles trouvées.")
+                    st.success("Extraction réussie !")
                 else:
-                    st.error("Aucune règle n'a pu être extraite.")
+                    st.error("Aucune donnée extraite.")
 
+    elif len(uploaded_files) > 2:
+        st.warning("⚠️ Pour faire la comparaison, il faut exactement deux fichiers (veuillez en retirer).")
 
-    # --- UI for Displaying Results ---
+    # 2. RENDU VISUEL (VOTRE INTERFACE)
     if st.session_state.comparison_data:
         res = st.session_state.comparison_data
-        st.divider()
-
+        
+        # --- RENDU EXTRACTION SIMPLE (Original) ---
         if res.get("single_mode"):
-            # Display for single file extraction
-            st.header("Règles Extraites")
-            st.metric("Nombre total de règles", len(res['data']))
-            json_export = json.dumps(res['data'], indent=2)
-            st.download_button("📥 Télécharger le JSON", json_export, "extraction.json", "application/json")
-            for rule in res['data']:
-                with st.expander(f"**{rule.get('control_id', 'N/A')}**: {rule.get('title', 'Sans titre')}"):
-                    st.json(rule)
-        else:
-            # Display for comparison result
-            st.header("Résultats de la Comparaison")
-            stats = res.get('stats', {})
+            data = res["data"]
+            st.divider()
+            c1, c2 = st.columns([1, 3])
+            c1.metric("Règles", len(data))
+            json_str = json.dumps(data, indent=4, ensure_ascii=False)
+            c2.download_button("📥 Télécharger JSON", json_str, "cis_export.json", "application/json")
             
-            # --- Metrics ---
-            col1, col2, col3 = st.columns(3)
-            col1.metric("🟢 Règles Ajoutées", stats.get('added', 0))
-            col2.metric("🔴 Règles Supprimées", stats.get('deleted', 0))
-            col3.metric("🟠 Règles Modifiées", stats.get('modified', 0))
+            st.divider()
+            for i, r in enumerate(data):
+                icon = "✅" if r.get('severity') != "Unknown" else "⚠️"
+                with st.expander(f"{icon} [{r.get('control_id')}] {clean_text(r.get('title'))}"):
+                    c_id, c_sev = st.columns([1, 4])
+                    c_id.text_input("ID", r.get('control_id'), key=f"id_{i}", disabled=True)
+                    c_sev.text_input("Sévérité", r.get('severity'), key=f"sev_{i}", disabled=True)
+                    st.text_area("Description", clean_text(r.get('description', '')), height=100, key=f"desc_{i}")
+                    t1, t2, t3 = st.tabs(["Justification", "Impact", "Remédiation"])
+                    t1.info(clean_text(r.get('rationale', 'N/A')))
+                    t2.warning(clean_text(r.get('impact', 'N/A')))
+                    t3.code(r.get('remediation', '')) # On garde le code brut pour la lisibilité
+                    st.caption(f"Page : {r.get('page')}")
 
-            # --- Detailed Tabs ---
-            tab_added, tab_deleted, tab_modified = st.tabs(["Ajouts", "Suppressions", "Modifications"])
-
-            with tab_added:
-                st.subheader(f"{stats.get('added', 0)} nouvelles règles")
-                for rule in res.get('added', []):
-                    with st.expander(f"**{rule.get('control_id', 'N/A')}**: {rule.get('title', 'Sans titre')}"):
-                        st.json(rule)
-
-            with tab_deleted:
-                st.subheader(f"{stats.get('deleted', 0)} règles obsolètes")
-                for rule in res.get('deleted', []):
-                    with st.expander(f"**{rule.get('control_id', 'N/A')}**: {rule.get('title', 'Sans titre')}"):
-                        st.json(rule)
-
-            with tab_modified:
-                st.subheader(f"{stats.get('modified', 0)} règles mises à jour")
-                for mod in res.get('modified', []):
-                    title = mod.get('control_id', 'N/A')
-                    with st.expander(f"**ID de Contrôle : {title}**"):
-                        st.write("Champs modifiés :")
-                        for field, changes in mod.get('changes', {}).items():
-                            st.markdown(f"- **{field.replace('_', ' ').capitalize()}**")
-                            col1, col2 = st.columns(2)
-                            with col1:
-                                st.text_area("Valeur Précédente", value=str(changes.get('old', '')), height=100, disabled=True, key=f"old_{title}_{field}")
-                            with col2:
-                                st.text_area("Nouvelle Valeur", value=str(changes.get('new', '')), height=100, disabled=True, key=f"new_{title}_{field}")
+        # --- RENDU COMPARAISON (Différentiel) ---
+        else:
+            stats = res.get('stats', {})
+            st.divider()
+            m1, m2, m3, m4 = st.columns(4)
+            m1.metric("Ancien", stats.get('count1', 0))
+            m2.metric("Nouveau", stats.get('count2', 0), delta=stats.get('count2', 0)-stats.get('count1', 0))
+            m3.metric("Ajouts", stats.get('added_count', 0))
+            m4.metric("Suppressions", stats.get('removed_count', 0), delta_color="inverse")
+            
+            st.divider()
+            tab_add, tab_rem, tab_mod = st.tabs([
+                f"✅ Ajouts ({stats.get('added_count', 0)})", 
+                f"❌ Suppressions ({stats.get('removed_count', 0)})", 
+                f"⚠️ Modifications ({stats.get('modified_count', 0)})"
+            ])
+            
+            with tab_add:
+                for r in res.get('added', []):
+                    with st.expander(f"➕ [{r.get('control_id')}] {clean_text(r.get('title'))}"):
+                        st.json(r)
+            with tab_rem:
+                for r in res.get('removed', []):
+                    with st.expander(f"➖ [{r.get('control_id')}] {clean_text(r.get('title'))}"):
+                        st.json(r)
+            with tab_mod:
+                for item in res.get('modified', []):
+                    # Récupération des changements détaillés
+                    changes = item.get('changes', {})
+                    # Titre dynamique (indique le nombre de champs touchés)
+                    title_clean = clean_text(item.get('new', {}).get('title'))
+                    title_str = f"📝 [{item.get('control_id')}] {title_clean} ({len(changes)} chgts)"
+                    
+                    with st.expander(title_str):
+                        if not changes:
+                            st.info("Changement détecté mais non listé (ex: espace vide).")
+                        
+                        for field, vals in changes.items():
+                            st.markdown(f"**Champ modifié : `{field}`**")
+                            col_a, col_b = st.columns(2)
+                            with col_a:
+                                st.caption("🔴 Avant")
+                                st.text(clean_text(vals.get('old', 'N/A')))
+                            with col_b:
+                                st.caption("🟢 Après")
+                                st.text(clean_text(vals.get('new', 'N/A')))
+                            st.divider()
 
 if __name__ == "__main__":
     main()
