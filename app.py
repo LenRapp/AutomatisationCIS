@@ -36,10 +36,10 @@ def main():
 
     if len(uploaded_files) == 2:
         file1, file2 = uploaded_files
-        st.info(f"Fichiers détectés : {file1.name} (Réf) et {file2.name} (Cible)")
+        st.info(f"Mode Comparaison : {file1.name} (Réf) vs {file2.name} (Cible)")
         
-        # Lancement des extractions en parallèle
-        if st.button("🚀 LANCER L'ANALYSE", type="primary"):
+        # 2. ACTION (Lancement des extractions en parallèle)
+        if st.button("🚀 LANCER LA COMPARAISON", type="primary"):
             if compare_data is None:
                 st.error("Le module de comparaison (src/comparator.py) est manquant. Attendez la partie du collègue !")
                 return
@@ -48,7 +48,7 @@ def main():
                 with concurrent.futures.ThreadPoolExecutor() as executor:
                     # On lance les deux extractions en même temps
                     f1 = executor.submit(process_file, file1)
-                    f2 = executor.submit(process_file, file2)
+                    f2 = executor(process_file, file2)
                     
                     data1 = f1.result()
                     data2 = f2.result()
@@ -59,51 +59,64 @@ def main():
                     st.success("Analyse terminée !")
                 else:
                     st.error("L'extraction a échoué sur l'un des fichiers.")
-    
-    elif len(uploaded_files) == 1:
-        st.warning("Veuillez ajouter un deuxième fichier pour pouvoir lancer la comparaison.")
 
+    elif len(uploaded_files) == 1:
+        file1 = uploaded_files[0]
+        st.info(f"Mode Extraction Simple : {file1.name}")
+        
+        if st.button("🚀 LANCER L'EXTRACTION", type="primary"):
+            with st.spinner("Analyse du document en cours..."):
+                data = process_file(file1)
+                if data:
+                    st.session_state.comparison_data = {"single_mode": True, "data": data}
+                    st.success("Extraction terminée !")
+                else:
+                    st.error("Aucune règle n'a pu être extraite.")
+
+    # 4. AFFICHAGE VISUEL
     if st.session_state.comparison_data:
         res = st.session_state.comparison_data
-        stats = res.get('stats', {})
         
-        st.divider()
-        
-        # Métriques de comparaison
-        c1, c2, c3, c4 = st.columns(4)
-        c1.metric("Ancien Total", stats.get('count1', 0))
-        c2.metric("Nouveau Total", stats.get('count2', 0), delta=stats.get('count2', 0) - stats.get('count1', 0))
-        c3.metric("Ajouts", stats.get('added_count', 0), delta_color="normal")
-        c4.metric("Suppressions", stats.get('removed_count', 0), delta_color="inverse")
-
-        st.divider()
-
-        # Visualisation par onglets
-        tab_add, tab_rem, tab_mod = st.tabs([
-            f"✅ Ajouts ({stats.get('added_count', 0)})", 
-            f"❌ Suppressions ({stats.get('removed_count', 0)})", 
-            f"⚠️ Modifications ({stats.get('modified_count', 0)})"
-        ])
-        
-        with tab_add:
-            for r in res.get('added', []):
-                with st.expander(f"➕ [{r.get('control_id')}] {r.get('title')}"):
-                    st.json(r)
-
-        with tab_rem:
-            for r in res.get('removed', []):
-                with st.expander(f"➖ [{r.get('control_id')}] {r.get('title')}"):
-                    st.json(r)
-
-        with tab_mod:
-            for item in res.get('modified', []):
-                old, new = item.get('old', {}), item.get('new', {})
-                with st.expander(f"📝 [{item.get('control_id')}] {new.get('title')}"):
-                    col_a, col_b = st.columns(2)
-                    col_a.write("**Version Précédente**")
-                    col_a.caption(f"Sévérité : {old.get('severity')}")
-                    col_b.write("**Nouvelle Version**")
-                    col_b.caption(f"Sévérité : {new.get('severity')}")
+        # CAS 1 : MODE EXTRACTION SIMPLE
+        if res.get("single_mode"):
+            data = res["data"]
+            st.divider()
+            
+            # Barre de statistiques et Export
+            c1, c2 = st.columns([1, 3])
+            c1.metric("Règles Trouvées", len(data))
+            
+            json_str = json.dumps(data, indent=4, ensure_ascii=False)
+            c2.download_button("📥 Télécharger le JSON", json_str, "cis_export.json", "application/json")
+            
+            st.divider()
+            
+            # Affichage "Accordéon" détaillé (Rendu Original)
+            for i, r in enumerate(data):
+                is_complete = r.get('severity') != "Unknown" and len(r.get('description', '')) > 5
+                icon = "✅" if is_complete else "⚠️"
+                
+                title_display = f"{icon} [{r.get('control_id')}] {r.get('title')}"
+                
+                with st.expander(title_display):
+                    # Formulaire de visualisation
+                    c1, c2 = st.columns([1, 4])
+                    c1.text_input("ID", r.get('control_id'), key=f"id_{i}", disabled=True)
+                    c2.text_input("Sévérité", r.get('severity'), key=f"sev_{i}", disabled=True)
+                    
+                    st.text_area("Description", r.get('description', ''), height=100, key=f"desc_{i}")
+                    
+                    # Onglets pour les détails techniques
+                    t1, t2, t3 = st.tabs(["Justification", "Impact", "Remédiation"])
+                    t1.info(r.get('rationale', 'Non renseigné'))
+                    t2.warning(r.get('impact', 'Non renseigné'))
+                    t3.code(r.get('remediation', ''))
+                    
+                    st.caption(f"Page source : {r.get('page')}")
+                    
+        # CAS 2 : MODE COMPARAISON
+        else:
+            stats = res.get('stats', {})
 
 if __name__ == "__main__":
     main()
