@@ -196,10 +196,12 @@ def main():
             with tab_add:
                 for r in res.get('added', []):
                     with st.expander(f"➕ [{r.get('control_id')}] {clean_text(r.get('title'))}"):
+                        st.success("✅ Règle Ajoutée")
                         st.json(r)
             with tab_rem:
                 for r in res.get('removed', []):
                     with st.expander(f"➖ [{r.get('control_id')}] {clean_text(r.get('title'))}"):
+                        st.error("❌ Règle Supprimée")
                         st.json(r)
             with tab_mod:
                 for item in res.get('modified', []):
