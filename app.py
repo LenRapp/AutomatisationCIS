@@ -1,22 +1,13 @@
 import streamlit as st
 from src.extraction import analyser_pdf_cis
 
-# --- ADAPTATEUR BACKEND (PONT ENTRE UI ET LOGIC) ---
 try:
     from src.comparator import compare_rules
     
     def compare_data_adapter(data1, data2):
-        """
-        Adapte la sortie de compare_rules (format collègue)
-        au format attendu par l'interface actuelle.
-        """
-        # 1. Appel de la fonction du collègue
+
         raw = compare_rules(data1, data2)
-        
-        # 2. Transformation pour l'UI
-        # L'UI attend : {'added': [...], 'removed': [...], 'modified': [{'old':..., 'new':...}]}
-        # Le collègue renvoie : {'added': [...], 'deleted': [...], 'modified': [{'changes':...}]}
-        
+
         adapted_modified = []
         for mod in raw.get('modified', []):
             # On essaie de reconstruire un objet old/new simpliste pour l'affichage
@@ -68,7 +59,6 @@ st.set_page_config(page_title="Comparateur CIS", page_icon="⚡", layout="wide")
 if 'comparison_data' not in st.session_state:
     st.session_state.comparison_data = None
 
-# OPTIMISATION : Mise en cache de l'extraction
 # Streamlit ne relancera pas la fonction si le contenu du fichier (les octets) n'a pas changé.
 @st.cache_data(show_spinner=False)
 def get_cached_extraction(file_content, file_name):
@@ -102,7 +92,7 @@ def main():
     def clear_state():
         st.session_state.comparison_data = None
 
-    # 1. ZONE UPLOAD (Unique et Multi-fichiers)
+    # UPLOAD (Unique et Multi-fichiers)
     uploaded_files = st.file_uploader(
         "Déposez vos fichiers PDF CIS (1 pour extraction, 2 pour comparaison)", 
         type="pdf", 
@@ -149,11 +139,11 @@ def main():
     elif len(uploaded_files) > 2:
         st.warning("⚠️ Pour faire la comparaison, il faut exactement deux fichiers (veuillez en retirer).")
 
-    # 2. RENDU VISUEL (VOTRE INTERFACE)
+    # RENDU VISUEL
     if st.session_state.comparison_data:
         res = st.session_state.comparison_data
         
-        # --- RENDU EXTRACTION SIMPLE (Original) ---
+        # RENDU EXTRACTION
         if res.get("single_mode"):
             data = res["data"]
             st.divider()
@@ -176,7 +166,7 @@ def main():
                     t3.code(r.get('remediation', '')) # On garde le code brut pour la lisibilité
                     st.caption(f"Page : {r.get('page')}")
 
-        # --- RENDU COMPARAISON (Différentiel) ---
+        # RENDU COMPARAISON
         else:
             stats = res.get('stats', {})
             st.divider()
