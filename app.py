@@ -321,24 +321,44 @@ def main():
                     "application/json"
                 )
 
-                tab_add, tab_rem, tab_mod = st.tabs(["Ajouts", "Suppressions", "Modifications"])
+                tab_add, tab_rem, tab_mod = st.tabs([
+                    f"✅ Ajouts ({stats.get('added_count', 0)})", 
+                    f"❌ Suppressions ({stats.get('removed_count', 0)})", 
+                    f"⚠️ Modifications ({stats.get('modified_count', 0)})"
+                ])
+
                 with tab_add:
                     for r in res.get('added', []):
-                        with st.expander(f"➕ [{r.get('control_id')}]"): st.json(r)
+                        with st.expander(f"➕ [{r.get('control_id')}] {clean_text(r.get('title'))}"):
+                            st.success("✅ Règle Ajoutée")
+                            st.json(r)
+
                 with tab_rem:
                     for r in res.get('removed', []):
-                        with st.expander(f"➖ [{r.get('control_id')}]"): st.json(r)
+                        with st.expander(f"➖ [{r.get('control_id')}] {clean_text(r.get('title'))}"):
+                            st.error("❌ Règle Supprimée")
+                            st.json(r)
+
                 with tab_mod:
                     for item in res.get('modified', []):
-                        title = clean_text(item.get('new', {}).get('title'))
-                        with st.expander(f"📝 [{item.get('control_id')}] {title}"):
-                            for field, vals in item.get('changes', {}).items():
-                                st.markdown(f"**{field}**")
-                                ca, cb = st.columns(2)
-                                ca.caption("Avant");
-                                ca.text(clean_text(vals.get('old')))
-                                cb.caption("Après");
-                                cb.text(clean_text(vals.get('new')))
+                        changes = item.get('changes', {})
+                        title_clean = clean_text(item.get('new', {}).get('title'))
+                        title_str = f"📝 [{item.get('control_id')}] {title_clean} ({len(changes)} chgts)"
+                        
+                        with st.expander(title_str):
+                            if not changes:
+                                st.info("Changement détecté mais non listé (ex: espace vide).")
+                            
+                            for field, vals in changes.items():
+                                st.markdown(f"**Champ modifié : `{field}`**")
+                                col_a, col_b = st.columns(2)
+                                with col_a:
+                                    st.caption("🔴 Avant")
+                                    st.text(clean_text(vals.get('old', 'N/A')))
+                                with col_b:
+                                    st.caption("🟢 Après")
+                                    st.text(clean_text(vals.get('new', 'N/A')))
+                                st.divider()
 
     # ---------------------------------------------------------
     # MODE 2 : GÉNÉRATEUR BENCHMARK (JSON + EXCEL)
