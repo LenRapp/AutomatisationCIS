@@ -124,7 +124,25 @@ def compare_data_adapter(data1, data2):
 def get_cached_extraction(file_content, file_name):
     virtual_file = io.BytesIO(file_content)
     virtual_file.name = file_name
-    return analyser_pdf_cis(virtual_file)
+    raw_data = analyser_pdf_cis(virtual_file)
+    
+    # DÉDUPLICATION INTELLIGENTE (Sommaire vs Contenu)
+    # On garde la version avec le numéro de page le plus élevé (le vrai contenu est après le sommaire)
+    unique_rules = {}
+    for rule in raw_data:
+        c_id = rule.get('control_id')
+        if c_id:
+            # Si on a déjà vu cet ID, on compare les pages
+            if c_id in unique_rules:
+                old_page = unique_rules[c_id].get('page', 0)
+                new_page = rule.get('page', 0)
+                if new_page > old_page:
+                    unique_rules[c_id] = rule
+            else:
+                unique_rules[c_id] = rule
+    
+    # On retourne la liste des valeurs (sans doublons)
+    return list(unique_rules.values())
 
 
 def process_file_wrapper(uploaded_file):
@@ -248,15 +266,47 @@ def main():
 
             if res.get("single_mode"):
                 data = res["data"]
+                # TRI : On s'assure que l'ordre est correct (par ID)
+                try:
+                    data.sort(key=lambda x: [int(p) if p.isdigit() else p for p in x.get('control_id', '').split('.')])
+                except:
+                    data.sort(key=lambda x: x.get('control_id', ''))
+
                 st.divider()
                 c1, c2 = st.columns([1, 3])
                 c1.metric("Règles", len(data))
                 c2.download_button("📥 Télécharger JSON", json.dumps(data, indent=4, ensure_ascii=False),
                                    "cis_export.json", "application/json")
-                with st.expander("Voir les règles extraites"):
-                    st.json(data[:5])
+                
+                st.divider()
+                for i, r in enumerate(data):
+                    icon = "✅" if r.get('severity') != "Unknown" else "⚠️"
+                    with st.expander(f"{icon} [{r.get('control_id')}] {clean_text(r.get('title'))}"):
+                        c_id, c_sev = st.columns([1, 4])
+                        c_id.text_input("ID", r.get('control_id'), key=f"id_{i}", disabled=True)
+                        c_sev.text_input("Sévérité", r.get('severity'), key=f"sev_{i}", disabled=True)
+                        st.text_area("Description", clean_text(r.get('description', '')), height=100, key=f"desc_{i}")
+                        t1, t2, t3 = st.tabs(["Justification", "Impact", "Remédiation"])
+                        t1.info(clean_text(r.get('rationale', 'N/A')))
+                        t2.warning(clean_text(r.get('impact', 'N/A')))
+                        t3.code(r.get('remediation', '')) # On garde le code brut pour la lisibilité
+                        st.caption(f"Page : {r.get('page')}")
             else:
                 stats = res.get('stats', {})
+                
+                # FONCTION DE TRI INTERNE
+                def natural_sort_key(item):
+                    try:
+                        # Tente de trier comme des versions (1.2.3)
+                        return [int(p) if p.isdigit() else p for p in item.get('control_id', '').split('.')]
+                    except:
+                        return item.get('control_id', '')
+
+                # Application du tri aux listes
+                res['added'].sort(key=natural_sort_key)
+                res['removed'].sort(key=natural_sort_key)
+                res['modified'].sort(key=natural_sort_key)
+
                 st.divider()
                 m1, m2, m3, m4 = st.columns(4)
                 m1.metric("Ancien", stats.get('count1', 0))
