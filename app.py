@@ -21,11 +21,12 @@ except ImportError:
 
 # Import Updater (Gestion des erreurs si le fichier manque)
 try:
-    from src.updater import load_json_file, save_json_file, update_year_in_text
+    from src.updater import load_json_file, save_json_file, run_dynamic_update as run_updater
 
     UPDATER_AVAILABLE = True
 except ImportError:
     load_json_file = None
+    run_updater = None
     UPDATER_AVAILABLE = False
 
 # --- 2. CONFIGURATION DE LA PAGE ---
@@ -150,58 +151,7 @@ def process_file_wrapper(uploaded_file, progress_callback=None):
 
 
 # --- 5. LOGIQUE UPDATER (Backend) ---
-
-def run_dynamic_update(source_path, summary_path, output_path, old_year, new_year, progress_callback=None):
-    """Logique métier de mise à jour utilisant les outils de src/updater.py"""
-    data_source = load_json_file(source_path)
-    data_summary = load_json_file(summary_path)
-
-    summary_list = data_summary
-    if isinstance(data_summary, dict):
-        summary_list = data_summary.get("modified", data_summary.get("items", []))
-
-    updates_map = {r.get('control_id'): r for r in summary_list if r.get('control_id')}
-    stats = {"updated": 0, "unchanged": 0, "year_replaced": 0}
-    new_data = []
-
-    source_items = data_source if isinstance(data_source, list) else data_source.get('items', [])
-    fields_to_update = ['title', 'description', 'severity', 'remediation', 'rationale', 'impact']
-    
-    total_items = len(source_items)
-    
-    for i, rule in enumerate(source_items):
-        if progress_callback:
-            progress_callback((i + 1) / total_items)
-
-        rule_id = rule.get('control_id')
-
-        # A. Update fields
-        if rule_id in updates_map:
-            new_info = updates_map[rule_id]
-            changes = new_info.get('changes', new_info)
-            for field in fields_to_update:
-                val = changes.get(field)
-                if isinstance(val, dict) and 'new' in val:
-                    rule[field] = val['new']
-                elif val:
-                    rule[field] = val
-            stats["updated"] += 1
-        else:
-            stats["unchanged"] += 1
-
-        # B. Update Year
-        for key, value in rule.items():
-            if isinstance(value, str) and old_year in value:
-                new_val = update_year_in_text(value, old_year, new_year)
-                if new_val != value:
-                    rule[key] = new_val
-                    stats["year_replaced"] += 1
-
-        new_data.append(rule)
-
-    final_structure = new_data if isinstance(data_source, list) else {"items": new_data}
-    save_json_file(final_structure, output_path)
-    return stats
+# La fonction run_dynamic_update a été supprimée et remplacée par l'import de run_updater de src.updater
 
 
 # --- 6. MAIN & INTERFACE ---
@@ -341,9 +291,9 @@ def main():
                 m4.metric("Suppressions", stats.get('removed_count', 0), delta_color="inverse")
 
                 st.download_button(
-                    "📥 Télécharger le fichier Résumé (pour Mise à jour)",
-                    json.dumps(res.get('modified'), indent=4, ensure_ascii=False),
-                    "resume_modifications.json",
+                    "📥 Télécharger le Résumé (pour Mise à jour)",
+                    json.dumps(res, indent=4),  # <--- Juste "res", PAS "res['modified']"
+                    "resume_complet.json",
                     "application/json"
                 )
 
@@ -403,18 +353,24 @@ def main():
 
         if src_file and res_file:
             if st.button("⚡ GÉNÉRER LA VERSION FINALE", type="primary"):
-                if not UPDATER_AVAILABLE:
-                    st.error("Module src/updater.py manquant.")
+                if not UPDATER_AVAILABLE or not run_updater:
+                    st.error("Module src/updater.py manquant ou corrompu.")
                 else:
                     prog_update = st.progress(0, text="Démarrage du processus...")
                     
                     p_src = None; p_res = None; p_out = None; p_excel = None; p_pdf_temp = None
 
                     try:
-                        # ÉTAPE 1 : 25%
+                        # ÉTAPE 1 : 25% -> 50%
                         prog_update.progress(25, text="25% - Analyse du fichier source...")
+
+                        def update_p_src(p):
+                            # p est entre 0.0 et 1.0, on le mappe sur l'intervalle 25-50%
+                            current = 25 + int(p * 25)
+                            prog_update.progress(current, text=f"{current}% - Analyse du fichier source ({int(p*100)}%)...")
+
                         if src_file.type == "application/pdf":
-                            pdf_data = get_cached_extraction(src_file.getvalue(), src_file.name)
+                            pdf_data = get_cached_extraction(src_file.getvalue(), src_file.name, _progress_callback=update_p_src)
                             if not pdf_data:
                                 st.error("Echec extraction PDF."); st.stop()
 
@@ -438,16 +394,24 @@ def main():
                         if p_src and p_res:
                             def update_p_upd(p):
                                 # 75% -> 95%
-                                current = 75 + int(p * 20)
+                                current = 50 + int(p * 45) # Progression de 50 à 95%
                                 prog_update.progress(current, text=f"{current}% - Application des mises à jour ({int(p*100)}%)...")
 
-                            stats = run_dynamic_update(p_src, p_res, p_out, old_year, new_year, progress_callback=update_p_upd)
+                            stats = run_updater(
+                                source_path=p_src, 
+                                summary_path=p_res, 
+                                output_json=p_out, 
+                                old_year=old_year, 
+                                new_year=new_year, 
+                                progress_callback=update_p_upd
+                            )
                             
                             # Conversion Excel
+                            prog_update.progress(95, text="95% - Conversion Excel...")
                             success_xls, msg_xls = convert_json_to_excel(p_out, p_excel)
 
                             # ÉTAPE 4 : 100%
-                            prog_update.progress(100, text="100% - Génération Excel terminée !")
+                            prog_update.progress(100, text="100% - Terminé !")
                             st.balloons()
                             st.success("✅ Processus terminé avec succès !")
                             prog_update.empty()
@@ -456,11 +420,14 @@ def main():
                                 st.info("📊 Conversion Excel effectuée automatiquement.")
                             else:
                                 st.warning(f"⚠️ Échec conversion Excel : {msg_xls}")
+                            
+                            st.subheader("Statistiques de la mise à jour")
+                            k1, k2, k3, k4 = st.columns(4)
+                            k1.metric("✅ Ajoutées", stats.get('added', 0))
+                            k2.metric("❌ Supprimées", stats.get('deleted', 0))
+                            k3.metric("✏️ Mises à jour", stats.get('updated', 0))
+                            k4.metric("📅 Rempl. Année", stats.get('year_replaced', 0))
 
-                            k1, k2, k3 = st.columns(3)
-                            k1.metric("Mises à jour", stats['updated'])
-                            k2.metric("Remplacements Année", stats['year_replaced'])
-                            k3.metric("Inchangées", stats['unchanged'])
 
                             col_dl1, col_dl2 = st.columns(2)
 

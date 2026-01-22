@@ -1,75 +1,154 @@
 import json
 import os
+import pandas as pd
 from typing import Dict, Any, List
 
+
 def load_json_file(path: str) -> Any:
-    """Charge un fichier JSON depuis le chemin spécifié."""
     if not os.path.exists(path):
-        raise FileNotFoundError(f"Le fichier {path} est introuvable.")
+        raise FileNotFoundError(f"Fichier introuvable : {path}")
     with open(path, 'r', encoding='utf-8') as f:
         return json.load(f)
 
+
 def save_json_file(data: Any, path: str) -> None:
-    """Sauvegarde les données dans un fichier JSON."""
     with open(path, 'w', encoding='utf-8') as f:
         json.dump(data, f, indent=4, ensure_ascii=False)
 
-def update_year_in_text(text: str, old_year: str = "2025", new_year: str = "2026") -> str:
-    """Remplace l'année dans une chaîne de caractères."""
-    return text.replace(old_year, new_year) if text else text
 
-def generate_2026_file(file_2025_path: str, summary_file_path: str, output_path: str) -> Dict[str, int]:
+def update_year_in_text(text: str, old_year: str, new_year: str) -> str:
+    if not isinstance(text, str): return text
+    return text.replace(old_year, new_year)
+
+
+def normalize_id(id_val):
     """
-    Met à jour le benchmark 2025 avec les données du résumé pour créer la version 2026.
-    
-    Args:
-        file_2025_path (str): Chemin du fichier source (version précédente).
-        summary_file_path (str): Chemin du fichier résumé contenant les mises à jour.
-        output_path (str): Chemin de sauvegarde du nouveau fichier.
-        
-    Returns:
-        dict: Statistiques de la mise à jour (updated, unchanged, year_replaced).
+    Fonction de nettoyage agressif pour les IDs.
+    Transforme " 3.3.3 " en "3.3.3"
     """
-    print(f"🔄 Traitement : {file_2025_path} + {summary_file_path} -> {output_path}")
-    
-    # Chargement des données
-    data_2025 = load_json_file(file_2025_path)
-    summary_data = load_json_file(summary_file_path)
+    if id_val is None:
+        return ""
+    # Convertit en string, enlève les espaces autour, et enlève même les espaces DEDANS
+    # Exemple : "3. 3. 3" deviendra "3.3.3"
+    return str(id_val).strip().replace(" ", "")
 
-    # Indexation du résumé par control_id pour accès rapide (O(1))
-    updates_map = {r.get('control_id'): r for r in summary_data if r.get('control_id')}
-    
-    stats = {"updated": 0, "unchanged": 0, "year_replaced": 0}
-    new_data = []
 
-    # Normalisation de la source (liste ou dict avec clé 'items')
-    source_items = data_2025 if isinstance(data_2025, list) else data_2025.get('items', [])
+def run_dynamic_update(
+        source_path: str,
+        summary_path: str,
+        output_json: str,
+        old_year: str = "2025",
+        new_year: str = "2026",
+        progress_callback=None
+) -> Dict[str, int]:
+    print("--- DÉBUT DU TRAITEMENT UPDATER ---")
 
-    # Liste des champs susceptibles d'être mis à jour via le résumé
-    fields_to_update = ['title', 'description', 'severity', 'remediation', 'rationale', 'impact']
+    # 1. Chargement
+    data_source = load_json_file(source_path)
+    data_summary = load_json_file(summary_path)
 
-    for rule in source_items:
-        rule_id = rule.get('control_id')
-        
-        # Application des mises à jour du résumé
-        if rule_id in updates_map:
-            new_info = updates_map[rule_id]
-            for field in fields_to_update:
-                if field in new_info:
-                    rule[field] = new_info[field]
-            stats["updated"] += 1
+    # 2. Préparation des listes
+    deleted_ids = set()
+    updates_map = {}
+    added_items = []
+
+    # Gestion des formats (removed ou deleted)
+    if isinstance(data_summary, dict):
+        raw_deleted = data_summary.get('removed', []) + data_summary.get('deleted', [])
+        added_items = data_summary.get('added', [])
+
+        # On remplit la liste des suppressions avec le nettoyage
+        for r in raw_deleted:
+            rid = normalize_id(r.get('control_id'))
+            if rid:
+                deleted_ids.add(rid)
+
+        # On remplit la map des modifications
+        for mod in data_summary.get('modified', []):
+            rid = normalize_id(mod.get('control_id'))
+            if rid:
+                updates_map[rid] = mod
+
+    elif isinstance(data_summary, list):
+        # Fallback ancien format
+        for r in data_summary:
+            rid = normalize_id(r.get('control_id'))
+            if rid:
+                updates_map[rid] = r
+
+    # DEBUG : Afficher ce qu'on a prévu de supprimer
+    print(f"DEBUG: Nombre de règles à supprimer trouvées dans le résumé : {len(deleted_ids)}")
+    if "3.3.3" in deleted_ids:
+        print("DEBUG: ✅ La règle 3.3.3 est bien détectée dans la liste des suppressions.")
+    else:
+        print("DEBUG: ❌ ALERTE : La règle 3.3.3 N'EST PAS dans la liste des suppressions chargée du résumé.")
+        print(f"DEBUG: Liste partielle des IDs à supprimer : {list(deleted_ids)[:10]}...")
+
+    # 3. Traitement de la Source
+    source_items = data_source if isinstance(data_source, list) else data_source.get('items', [])
+    final_items = []
+    stats = {"deleted": 0, "updated": 0, "unchanged": 0, "added": 0, "year_replaced": 0}
+
+    fields = ['title', 'description', 'severity', 'remediation', 'rationale', 'impact']
+    total = len(source_items)
+
+    for i, rule in enumerate(source_items):
+        if progress_callback:
+            progress_callback((i / total) * 0.9)
+
+        # On nettoie l'ID de la règle en cours
+        raw_id = rule.get('control_id')
+        clean_id = normalize_id(raw_id)
+
+        # === LOGIQUE CRITIQUE DE SUPPRESSION ===
+        if clean_id in deleted_ids:
+            stats['deleted'] += 1
+            # DEBUG pour voir passer la 3.3.3
+            if clean_id == "3.3.3":
+                print(f"DEBUG: 🗑️ SUPPRESSION EFFECTIVE DE {clean_id}")
+            continue  # ON SAUTE L'AJOUT -> La règle disparait
+
+        # Si c'est la 3.3.3 et qu'on est ici, c'est qu'elle n'a pas été supprimée
+        if clean_id == "3.3.3":
+            print(f"DEBUG: ⚠️ La règle 3.3.3 est conservée. Est-elle bien dans deleted_ids ? {clean_id in deleted_ids}")
+
+        # === MODIFICATIONS ===
+        if clean_id in updates_map:
+            changes = updates_map[clean_id].get('changes', updates_map[clean_id])
+            for f in fields:
+                val = changes.get(f)
+                if isinstance(val, dict) and 'new' in val:
+                    rule[f] = val['new']
+                elif val:
+                    rule[f] = val
+            stats['updated'] += 1
         else:
-            stats["unchanged"] += 1
-        # On parcourt toutes les valeurs textuelles de la règle pour remplacer l'année
-        for key, value in rule.items():
-            if isinstance(value, str) and "2025" in value:
-                rule[key] = update_year_in_text(value)
-                stats["year_replaced"] += 1
-        
-        new_data.append(rule)
+            stats['unchanged'] += 1
 
-    #Sauvegarde
-    final_structure = new_data if isinstance(data_2025, list) else {"items": new_data}
-    save_json_file(final_structure, output_path)
-    
+        # === REMPLACEMENT ANNÉE ===
+        for k, v in rule.items():
+            if isinstance(v, str) and old_year in v:
+                rule[k] = update_year_in_text(v, old_year, new_year)
+                stats['year_replaced'] += 1
+
+        final_items.append(rule)
+
+    # 4. Ajouts
+    for new_rule in added_items:
+        # Nettoyage et année pour les nouvelles règles
+        for k, v in new_rule.items():
+            if isinstance(v, str) and old_year in v:
+                new_rule[k] = update_year_in_text(v, old_year, new_year)
+        final_items.append(new_rule)
+        stats['added'] += 1
+
+    if progress_callback:
+        progress_callback(1.0)
+
+    print(f"--- FIN DU TRAITEMENT : {stats['deleted']} règles supprimées ---")
+
+    # 5. Sauvegarde
+    final_structure = {"items": final_items}
+    save_json_file(final_structure, output_json)
+
     return stats
