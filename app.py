@@ -120,11 +120,11 @@ def compare_data_adapter(data1, data2):
     }
 
 
-@st.cache_data(show_spinner=False)
-def get_cached_extraction(file_content, file_name):
+# On retire le cache pour permettre la mise à jour de la barre de progression en direct
+def get_cached_extraction(file_content, file_name, _progress_callback=None):
     virtual_file = io.BytesIO(file_content)
     virtual_file.name = file_name
-    raw_data = analyser_pdf_cis(virtual_file)
+    raw_data = analyser_pdf_cis(virtual_file, progress_callback=_progress_callback)
     
     # DÉDUPLICATION INTELLIGENTE (Sommaire vs Contenu)
     # On garde la version avec le numéro de page le plus élevé (le vrai contenu est après le sommaire)
@@ -145,13 +145,13 @@ def get_cached_extraction(file_content, file_name):
     return list(unique_rules.values())
 
 
-def process_file_wrapper(uploaded_file):
-    return get_cached_extraction(uploaded_file.getvalue(), uploaded_file.name)
+def process_file_wrapper(uploaded_file, progress_callback=None):
+    return get_cached_extraction(uploaded_file.getvalue(), uploaded_file.name, _progress_callback=progress_callback)
 
 
 # --- 5. LOGIQUE UPDATER (Backend) ---
 
-def run_dynamic_update(source_path, summary_path, output_path, old_year, new_year):
+def run_dynamic_update(source_path, summary_path, output_path, old_year, new_year, progress_callback=None):
     """Logique métier de mise à jour utilisant les outils de src/updater.py"""
     data_source = load_json_file(source_path)
     data_summary = load_json_file(summary_path)
@@ -166,8 +166,13 @@ def run_dynamic_update(source_path, summary_path, output_path, old_year, new_yea
 
     source_items = data_source if isinstance(data_source, list) else data_source.get('items', [])
     fields_to_update = ['title', 'description', 'severity', 'remediation', 'rationale', 'impact']
+    
+    total_items = len(source_items)
+    
+    for i, rule in enumerate(source_items):
+        if progress_callback:
+            progress_callback((i + 1) / total_items)
 
-    for rule in source_items:
         rule_id = rule.get('control_id')
 
         # A. Update fields
@@ -238,28 +243,49 @@ def main():
                 if not COMPARATOR_AVAILABLE:
                     st.error("src/comparator.py introuvable.")
                 else:
-                    with st.spinner("Analyse..."):
-                        with concurrent.futures.ThreadPoolExecutor() as executor:
-                            f1 = executor.submit(process_file_wrapper, file1)
-                            f2 = executor.submit(process_file_wrapper, file2)
-                            d1 = f1.result()
-                            d2 = f2.result()
+                    prog_bar = st.progress(0, text="0% - Lancement...")
+                    
+                    # Analyse Fichier 1 (0% -> 45%)
+                    def update_p1(p):
+                        # p est entre 0.0 et 1.0
+                        current = int(p * 45)
+                        prog_bar.progress(current, text=f"{current}% - Analyse {file1.name} ({int(p*100)}%)...")
 
-                        if d1 and d2:
-                            st.session_state.comparison_data = compare_data_adapter(d1, d2)
-                            st.success("Terminé !")
-                        else:
-                            st.error("Erreur extraction PDF.")
+                    d1 = process_file_wrapper(file1, progress_callback=update_p1)
+
+                    # Analyse Fichier 2 (45% -> 90%)
+                    def update_p2(p):
+                        current = 45 + int(p * 45)
+                        prog_bar.progress(current, text=f"{current}% - Analyse {file2.name} ({int(p*100)}%)...")
+
+                    d2 = process_file_wrapper(file2, progress_callback=update_p2)
+
+                    prog_bar.progress(90, text="90% - Calcul des différences...")
+
+                    if d1 and d2:
+                        st.session_state.comparison_data = compare_data_adapter(d1, d2)
+                        prog_bar.progress(100, text="100% - Terminé !")
+                        prog_bar.empty()
+                        st.success("Comparaison terminée !")
+                    else:
+                        st.error("Erreur extraction PDF.")
 
         elif len(uploaded_files) == 1:
             file1 = uploaded_files[0]
             st.info(f"📄 Extraction : **{file1.name}**")
             if st.button("🚀 LANCER L'EXTRACTION", type="primary"):
-                with st.spinner("Extraction..."):
-                    data = process_file_wrapper(file1)
-                    if data:
-                        st.session_state.comparison_data = {"single_mode": True, "data": data}
-                        st.success("Réussi !")
+                prog_bar = st.progress(0, text="0% - Lancement...")
+                
+                def update_p(p):
+                    prog_bar.progress(int(p * 100), text=f"{int(p*100)}% - Analyse {file1.name}...")
+
+                data = process_file_wrapper(file1, progress_callback=update_p)
+                
+                if data:
+                    st.session_state.comparison_data = {"single_mode": True, "data": data}
+                    prog_bar.progress(100, text="100% - Terminé !")
+                    prog_bar.empty()
+                    st.success("Réussi !")
 
         if st.session_state.comparison_data:
             res = st.session_state.comparison_data
@@ -380,92 +406,94 @@ def main():
                 if not UPDATER_AVAILABLE:
                     st.error("Module src/updater.py manquant.")
                 else:
-                    with st.spinner(f"Traitement {old_year} ➔ {new_year}..."):
-                        p_src = None;
-                        p_res = None;
-                        p_out = None;
-                        p_excel = None;
-                        p_pdf_temp = None
+                    prog_update = st.progress(0, text="Démarrage du processus...")
+                    
+                    p_src = None; p_res = None; p_out = None; p_excel = None; p_pdf_temp = None
 
-                        try:
-                            # 1. Gestion Source (Conversion PDF si besoin)
-                            if src_file.type == "application/pdf":
-                                with st.status("Conversion du PDF en cours..."):
-                                    pdf_data = get_cached_extraction(src_file.getvalue(), src_file.name)
-                                    if not pdf_data:
-                                        st.error("Echec extraction PDF.");
-                                        st.stop()
+                    try:
+                        # ÉTAPE 1 : 25%
+                        prog_update.progress(25, text="25% - Analyse du fichier source...")
+                        if src_file.type == "application/pdf":
+                            pdf_data = get_cached_extraction(src_file.getvalue(), src_file.name)
+                            if not pdf_data:
+                                st.error("Echec extraction PDF."); st.stop()
 
-                                    fd, p_pdf_temp = tempfile.mkstemp(suffix=".json")
-                                    os.close(fd)
-                                    with open(p_pdf_temp, "w", encoding="utf-8") as f:
-                                        json.dump(pdf_data, f, indent=4)
-                                    p_src = p_pdf_temp
-                            else:
-                                p_src = save_uploaded_file_temp(src_file)
-
-                            # 2. Gestion Résumé et Output
-                            p_res = save_uploaded_file_temp(res_file)
-                            fd, p_out = tempfile.mkstemp(suffix=".json")
+                            fd, p_pdf_temp = tempfile.mkstemp(suffix=".json")
                             os.close(fd)
+                            with open(p_pdf_temp, "w", encoding="utf-8") as f:
+                                json.dump(pdf_data, f, indent=4)
+                            p_src = p_pdf_temp
+                        else:
+                            p_src = save_uploaded_file_temp(src_file)
 
-                            # Fichier Excel temporaire
-                            fd_xls, p_excel = tempfile.mkstemp(suffix=".xlsx")
-                            os.close(fd_xls)
+                        # ÉTAPE 2 : 50%
+                        prog_update.progress(50, text="50% - Préparation du fichier résumé...")
+                        p_res = save_uploaded_file_temp(res_file)
+                        fd, p_out = tempfile.mkstemp(suffix=".json")
+                        os.close(fd)
+                        fd_xls, p_excel = tempfile.mkstemp(suffix=".xlsx")
+                        os.close(fd_xls)
 
-                            # 3. Exécution UPDATE (JSON -> JSON)
-                            if p_src and p_res:
-                                stats = run_dynamic_update(p_src, p_res, p_out, old_year, new_year)
+                        # ÉTAPE 3 : 75%
+                        if p_src and p_res:
+                            def update_p_upd(p):
+                                # 75% -> 95%
+                                current = 75 + int(p * 20)
+                                prog_update.progress(current, text=f"{current}% - Application des mises à jour ({int(p*100)}%)...")
 
-                                st.balloons()
-                                st.success("✅ Mise à jour JSON terminée !")
+                            stats = run_dynamic_update(p_src, p_res, p_out, old_year, new_year, progress_callback=update_p_upd)
+                            
+                            # Conversion Excel
+                            success_xls, msg_xls = convert_json_to_excel(p_out, p_excel)
 
-                                # 4. Exécution CONVERSION EXCEL (JSON Final -> Excel)
-                                # On utilise uniquement le JSON de sortie (p_out)
-                                success_xls, msg_xls = convert_json_to_excel(p_out, p_excel)
+                            # ÉTAPE 4 : 100%
+                            prog_update.progress(100, text="100% - Génération Excel terminée !")
+                            st.balloons()
+                            st.success("✅ Processus terminé avec succès !")
+                            prog_update.empty()
 
-                                if success_xls:
-                                    st.info("📊 Conversion Excel effectuée automatiquement.")
-                                else:
-                                    st.warning(f"⚠️ Échec conversion Excel : {msg_xls}")
+                            if success_xls:
+                                st.info("📊 Conversion Excel effectuée automatiquement.")
+                            else:
+                                st.warning(f"⚠️ Échec conversion Excel : {msg_xls}")
 
-                                k1, k2, k3 = st.columns(3)
-                                k1.metric("Mises à jour", stats['updated'])
-                                k2.metric("Remplacements Année", stats['year_replaced'])
-                                k3.metric("Inchangées", stats['unchanged'])
+                            k1, k2, k3 = st.columns(3)
+                            k1.metric("Mises à jour", stats['updated'])
+                            k2.metric("Remplacements Année", stats['year_replaced'])
+                            k3.metric("Inchangées", stats['unchanged'])
 
-                                col_dl1, col_dl2 = st.columns(2)
+                            col_dl1, col_dl2 = st.columns(2)
 
-                                # Bouton JSON
-                                with open(p_out, "r", encoding="utf-8") as f:
-                                    final_json = f.read()
-                                col_dl1.download_button(
-                                    f"📥 Télécharger JSON {new_year}",
-                                    final_json,
-                                    f"cis_{new_year}.json",
-                                    "application/json"
+                            # Bouton JSON
+                            with open(p_out, "r", encoding="utf-8") as f:
+                                final_json = f.read()
+                            col_dl1.download_button(
+                                f"📥 Télécharger JSON {new_year}",
+                                final_json,
+                                f"cis_{new_year}.json",
+                                "application/json"
+                            )
+
+                            # Bouton Excel
+                            if success_xls:
+                                with open(p_excel, "rb") as f:
+                                    final_xls = f.read()
+                                col_dl2.download_button(
+                                    f"📥 Télécharger Excel {new_year}",
+                                    final_xls,
+                                    f"cis_{new_year}.xlsx",
+                                    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
                                 )
 
-                                # Bouton Excel
-                                if success_xls:
-                                    with open(p_excel, "rb") as f:
-                                        final_xls = f.read()
-                                    col_dl2.download_button(
-                                        f"📥 Télécharger Excel {new_year}",
-                                        final_xls,
-                                        f"cis_{new_year}.xlsx",
-                                        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-                                    )
+                    except Exception as e:
+                        st.error(f"Erreur : {e}")
 
-                        except Exception as e:
-                            st.error(f"Erreur : {e}")
-
-                        finally:
-                            # Nettoyage sécurisé
-                            for p in [p_src, p_res, p_out, p_excel]:
-                                if p and os.path.exists(p): os.remove(p)
-                            if p_pdf_temp and os.path.exists(p_pdf_temp) and p_pdf_temp != p_src:
-                                os.remove(p_pdf_temp)
+                    finally:
+                        # Nettoyage sécurisé
+                        for p in [p_src, p_res, p_out, p_excel]:
+                            if p and os.path.exists(p): os.remove(p)
+                        if p_pdf_temp and os.path.exists(p_pdf_temp) and p_pdf_temp != p_src:
+                            os.remove(p_pdf_temp)
 
 
 if __name__ == "__main__":

@@ -20,7 +20,7 @@ def detecter_technologie(text_page_garde):
         return " ".join(nom_complet.split()[:5]) if len(nom_complet) > 60 else nom_complet
     return "Technologie Inconnue"
 
-def analyser_pdf_cis(fichier_pdf):
+def analyser_pdf_cis(fichier_pdf, progress_callback=None):
     # This function is now designed to be thread-safe for use with Streamlit
     # by avoiding direct calls to Streamlit UI elements (e.g., st.error).
     # Errors should be returned or raised to be handled by the calling thread.
@@ -48,6 +48,7 @@ def analyser_pdf_cis(fichier_pdf):
                 print("Warning: PDF has no pages.")
                 return []
 
+            total_pages = len(pdf.pages)
             # Infos globales (Page 1 seulement)
             first_page_text = pdf.pages[0].extract_text(x_tolerance=1, y_tolerance=3) or ""
             db_type = detecter_technologie(first_page_text)
@@ -57,9 +58,16 @@ def analyser_pdf_cis(fichier_pdf):
             regle_actuelle = None
             section_en_cours = DEFAULT_SECTION
 
-            print(f"Total pages to process: {len(pdf.pages)}")
+            print(f"Total pages to process: {total_pages}")
             for i, page in enumerate(pdf.pages):
-                print(f"  - Processing page {i + 1}/{len(pdf.pages)}...")
+                # Mise à jour de la barre de progression
+                if progress_callback:
+                    try:
+                        progress_callback((i + 1) / total_pages)
+                    except Exception as e:
+                        print(f"Error in progress callback: {e}")
+
+                print(f"  - Processing page {i + 1}/{total_pages}...")
                 try:
                     texte = page.extract_text(x_tolerance=1, y_tolerance=3)
                     if not texte:
