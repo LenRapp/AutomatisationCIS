@@ -2,7 +2,6 @@ import streamlit as st
 import json
 import os
 import tempfile
-import concurrent.futures
 import io
 import pandas as pd  # <--- AJOUT MAJEUR POUR EXCEL
 
@@ -21,11 +20,16 @@ except ImportError:
 
 # Import Updater (Gestion des erreurs si le fichier manque)
 try:
-    from src.updater import load_json_file, save_json_file, run_dynamic_update as run_updater
-
+    from src.updater import load_json_file, save_json_file, update_year_in_text, run_dynamic_update
+    
+    # Alias pour compatibilité avec le reste du code
+    run_updater = run_dynamic_update
     UPDATER_AVAILABLE = True
 except ImportError:
     load_json_file = None
+    save_json_file = None
+    update_year_in_text = None
+    run_dynamic_update = None
     run_updater = None
     UPDATER_AVAILABLE = False
 
@@ -56,13 +60,13 @@ def save_uploaded_file_temp(uploaded_file):
 
 
 def convert_json_to_excel(json_path, excel_path):
-    """Convertit le fichier JSON final en fichier Excel pour téléchargement."""
+    """Convertit le fichier JSON final en fichier Excel soigné avec XlsxWriter."""
     try:
         # Lecture du JSON généré
         with open(json_path, 'r', encoding='utf-8') as f:
             data = json.load(f)
 
-        # Normalisation (on récupère la liste des règles)
+        # Normalisation
         items = data if isinstance(data, list) else data.get('items', [])
 
         if not items:
@@ -71,14 +75,57 @@ def convert_json_to_excel(json_path, excel_path):
         # Création DataFrame Pandas
         df = pd.DataFrame(items)
 
-        # Réorganisation des colonnes pour avoir l'ID et le Titre au début (UX)
+        # Réorganisation des colonnes
         priority_cols = ['control_id', 'title', 'severity', 'description', 'rationale', 'impact', 'remediation']
-        # On prend les colonnes prioritaires qui existent + le reste
         cols = [c for c in priority_cols if c in df.columns] + [c for c in df.columns if c not in priority_cols]
         df = df[cols]
 
-        # Export Excel (sans l'index pandas)
-        df.to_excel(excel_path, index=False)
+        # Export Excel avec XlsxWriter pour le formatage
+        with pd.ExcelWriter(excel_path, engine='xlsxwriter') as writer:
+            df.to_excel(writer, index=False, sheet_name='Benchmark')
+            
+            workbook = writer.book
+            worksheet = writer.sheets['Benchmark']
+            
+            # Définition des formats
+            header_fmt = workbook.add_format({
+                'bold': True,
+                'text_wrap': True,
+                'valign': 'top',
+                'fg_color': '#4F81BD',
+                'font_color': 'white',
+                'border': 1
+            })
+            
+            text_fmt = workbook.add_format({
+                'text_wrap': True,
+                'valign': 'top',
+                'border': 1
+            })
+            
+            # Formatage des colonnes
+            for col_num, value in enumerate(df.columns.values):
+                # Écriture de l'en-tête stylisé
+                worksheet.write(0, col_num, value, header_fmt)
+                
+                # Définition de la largeur selon la colonne
+                if value in ['control_id', 'severity', 'cis_benchmark_version']:
+                    width = 15
+                elif value == 'title':
+                    width = 40
+                elif value in ['description', 'rationale', 'impact', 'remediation']:
+                    width = 60
+                elif value in ['audit', 'check', 'verification']:  # <--- Audit plus large
+                    width = 80
+                else:
+                    width = 25
+                
+                # Application de la largeur et du format de cellule
+                worksheet.set_column(col_num, col_num, width, text_fmt)
+            
+            # Figer la première ligne (volets)
+            worksheet.freeze_panes(1, 0)
+
         return True, "Succès"
     except Exception as e:
         return False, str(e)

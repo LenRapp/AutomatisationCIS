@@ -1,7 +1,6 @@
 import pdfplumber
 import re
 import json
-import streamlit as st
 
 def load_config():
     """Charge la configuration et prépare les regex pour la performance."""
