@@ -1,0 +1,136 @@
+{% extends "layout.html" %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h2>📊 Résultat de la Comparaison</h2>
+    <a href="/comparaison" class="btn btn-outline-secondary">Nouvelle comparaison</a>
+</div>
+
+<div class="row text-center mb-4">
+    <div class="col-md-4">
+        <div class="card text-white bg-success mb-3">
+            <div class="card-header">Ajouts</div>
+            <div class="card-body">
+                <h1 class="card-title">{{ stats.added }}</h1>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-4">
+        <div class="card text-white bg-danger mb-3">
+            <div class="card-header">Suppressions</div>
+            <div class="card-body">
+                <h1 class="card-title">{{ stats.deleted }}</h1>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-4">
+        <div class="card text-white bg-warning mb-3">
+            <div class="card-header">Modifications</div>
+            <div class="card-body">
+                <h1 class="card-title">{{ stats.modified }}</h1>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Tabs -->
+<ul class="nav nav-tabs" id="compTabs" role="tablist">
+    <li class="nav-item">
+        <a class="nav-link active" id="add-tab" data-bs-toggle="tab" href="#added" role="tab">✅ Ajouts ({{ stats.added }})</a>
+    </li>
+    <li class="nav-item">
+        <a class="nav-link" id="del-tab" data-bs-toggle="tab" href="#deleted" role="tab">❌ Suppressions ({{ stats.deleted }})</a>
+    </li>
+    <li class="nav-item">
+        <a class="nav-link" id="mod-tab" data-bs-toggle="tab" href="#modified" role="tab">⚠️ Modifications ({{ stats.modified }})</a>
+    </li>
+</ul>
+
+<div class="tab-content p-3 border border-top-0 bg-white">
+    
+    <!-- ADDED -->
+    <div class="tab-pane fade show active" id="added" role="tabpanel">
+        {% if diff.added %}
+            <div class="list-group">
+            {% for rule in diff.added %}
+                <div class="list-group-item list-group-item-action">
+                    <div class="d-flex w-100 justify-content-between">
+                        <h5 class="mb-1 text-success">➕ [{{ rule.control_id }}] {{ rule.title }}</h5>
+                        <small>{{ rule.severity }}</small>
+                    </div>
+                    <p class="mb-1">{{ rule.description }}</p>
+                </div>
+            {% endfor %}
+            </div>
+        {% else %}
+            <p class="text-muted text-center mt-3">Aucun ajout détecté.</p>
+        {% endif %}
+    </div>
+
+    <!-- DELETED -->
+    <div class="tab-pane fade" id="deleted" role="tabpanel">
+        {% if diff.deleted %}
+            <div class="list-group">
+            {% for rule in diff.deleted %}
+                <div class="list-group-item list-group-item-action">
+                    <div class="d-flex w-100 justify-content-between">
+                        <h5 class="mb-1 text-danger">➖ [{{ rule.control_id }}] {{ rule.title }}</h5>
+                        <small>{{ rule.severity }}</small>
+                    </div>
+                    <p class="mb-1">{{ rule.description }}</p>
+                </div>
+            {% endfor %}
+            </div>
+        {% else %}
+            <p class="text-muted text-center mt-3">Aucune suppression détectée.</p>
+        {% endif %}
+    </div>
+
+    <!-- MODIFIED -->
+    <div class="tab-pane fade" id="modified" role="tabpanel">
+        {% if diff.modified %}
+            <div class="accordion" id="accMod">
+            {% for mod in diff.modified %}
+                <div class="accordion-item">
+                    <h2 class="accordion-header">
+                        <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#mod{{ loop.index }}">
+                            📝 <strong>[{{ mod.control_id }}]</strong> &nbsp; Modification ({{ mod.changes|length }} champs)
+                        </button>
+                    </h2>
+                    <div id="mod{{ loop.index }}" class="accordion-collapse collapse" data-bs-parent="#accMod">
+                        <div class="accordion-body">
+                            <table class="table table-bordered table-sm">
+                                <thead class="table-light">
+                                    <tr>
+                                        <th>Champ</th>
+                                        <th>🔴 Ancienne Valeur</th>
+                                        <th>🟢 Nouvelle Valeur</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {% for field, vals in mod.changes.items() %}
+                                    <tr>
+                                        <td><strong>{{ field }}</strong></td>
+                                        <td class="text-danger"><small>{{ vals.old }}</small></td>
+                                        <td class="text-success"><small>{{ vals.new }}</small></td>
+                                    </tr>
+                                    {% endfor %}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            {% endfor %}
+            </div>
+        {% else %}
+            <p class="text-muted text-center mt-3">Aucune modification détectée.</p>
+        {% endif %}
+    </div>
+
+</div>
+
+<div class="text-center mt-4">
+    <a href="/download/diff/{{ task_id }}" class="btn btn-primary">📥 Télécharger le rapport JSON</a>
+</div>
+
+{% endblock %}

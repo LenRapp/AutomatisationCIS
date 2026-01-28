@@ -4,28 +4,37 @@
 <div class="row justify-content-center">
     <div class="col-md-8">
         <div class="card">
-            <div class="card-header bg-primary text-white">
-                <h4>📄 Extraction de Règles CIS (PDF)</h4>
+            <div class="card-header bg-dark text-white">
+                <h4>🚀 Comparaison de Benchmarks CIS</h4>
             </div>
             <div class="card-body">
-                <form id="uploadForm">
-                    <div class="mb-3">
-                        <label for="file" class="form-label">Choisissez un fichier PDF CIS Benchmark</label>
-                        <input class="form-control" type="file" id="file" name="file" accept=".pdf" required>
+                <div class="alert alert-info">
+                    Comparez une ancienne version (Référence) avec une nouvelle (Cible) pour identifier les changements.
+                </div>
+                <form id="compareForm">
+                    <div class="row">
+                        <div class="col-md-6 mb-3">
+                            <label for="file1" class="form-label">1. Fichier Référence (ex: v1.0)</label>
+                            <input class="form-control" type="file" id="file1" name="file1" accept=".pdf" required>
+                        </div>
+                        <div class="col-md-6 mb-3">
+                            <label for="file2" class="form-label">2. Fichier Cible (ex: v2.0)</label>
+                            <input class="form-control" type="file" id="file2" name="file2" accept=".pdf" required>
+                        </div>
                     </div>
                     <button type="submit" class="btn btn-primary w-100" id="btnSubmit">
-                        Démarrer l'extraction
+                        Lancer la Comparaison
                     </button>
                 </form>
 
-                <!-- Zone de progression (cachée au début) -->
+                <!-- Zone de progression -->
                 <div id="progressArea" class="mt-4" style="display:none;">
-                    <h5>Analyse en cours...</h5>
+                    <h5>Analyse et Comparaison...</h5>
                     <div class="progress" style="height: 25px;">
                         <div id="progressBar" class="progress-bar progress-bar-striped progress-bar-animated bg-success" 
                              role="progressbar" style="width: 0%;">0%</div>
                     </div>
-                    <p id="statusText" class="text-muted mt-2">Initialisation...</p>
+                    <p id="statusText" class="text-muted mt-2">Démarrage...</p>
                 </div>
 
                 <div id="errorArea" class="alert alert-danger mt-3" style="display:none;"></div>
@@ -33,35 +42,32 @@
         </div>
     </div>
 </div>
-
 {% endblock %}
 
 {% block scripts %}
 <script>
 $(document).ready(function() {
-    $('#uploadForm').on('submit', function(e) {
+    $('#compareForm').on('submit', function(e) {
         e.preventDefault();
         
         var formData = new FormData(this);
         
-        // UI Reset
         $('#btnSubmit').prop('disabled', true);
         $('#progressArea').show();
         $('#progressBar').css('width', '0%').text('0%');
         $('#errorArea').hide();
 
         $.ajax({
-            url: '/api/extract',
+            url: '/api/compare',
             type: 'POST',
             data: formData,
             contentType: false,
             processData: false,
             success: function(response) {
-                var taskId = response.task_id;
-                pollProgress(taskId);
+                pollProgress(response.task_id);
             },
             error: function(err) {
-                $('#errorArea').text("Erreur lors de l'envoi du fichier.").show();
+                $('#errorArea').text("Erreur lors de l'envoi.").show();
                 $('#btnSubmit').prop('disabled', false);
                 $('#progressArea').hide();
             }
@@ -71,32 +77,26 @@ $(document).ready(function() {
     function pollProgress(taskId) {
         var interval = setInterval(function() {
             $.get('/api/progress/' + taskId, function(data) {
-                if (data.status === 'not_found') {
+                if (data.status === 'not_found' || data.error) {
                     clearInterval(interval);
-                    $('#errorArea').text("Tâche introuvable.").show();
-                    return;
-                }
-                
-                if (data.error) {
-                    clearInterval(interval);
-                    $('#progressBar').addClass('bg-danger');
-                    $('#statusText').text("Erreur : " + data.error);
+                    $('#errorArea').text(data.error || "Erreur inconnue").show();
                     return;
                 }
 
                 var p = data.progress;
                 $('#progressBar').css('width', p + '%').text(p + '%');
-                $('#statusText').text("Traitement de la page... " + p + "%");
+                
+                if (p < 50) $('#statusText').text("Analyse du fichier 1...");
+                else if (p < 99) $('#statusText').text("Analyse du fichier 2...");
+                else $('#statusText').text("Finalisation...");
 
                 if (data.redirect) {
                     clearInterval(interval);
-                    $('#statusText').text("Terminé ! Redirection...");
-                    setTimeout(function() {
-                        window.location.href = data.redirect;
-                    }, 500);
+                    $('#statusText').text("Terminé !");
+                    window.location.href = data.redirect;
                 }
             });
-        }, 1000); // Check toutes les 1s
+        }, 1000);
     }
 });
 </script>
