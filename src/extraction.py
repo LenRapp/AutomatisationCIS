@@ -1,7 +1,6 @@
 import pdfplumber
 import re
 import json
-import streamlit as st
 
 def load_config():
     """Charge la configuration et prépare les regex pour la performance."""
@@ -20,14 +19,16 @@ def detecter_technologie(text_page_garde):
         return " ".join(nom_complet.split()[:5]) if len(nom_complet) > 60 else nom_complet
     return "Technologie Inconnue"
 
-def analyser_pdf_cis(fichier_pdf):
+def analyser_pdf_cis(fichier_pdf, progress_callback=None):
+    print(f"Starting analysis for file: {getattr(fichier_pdf, 'name', 'unknown file')}")
+    
     config = load_config()
     
-    # Pré-compilation des Regex
     raw_regex = config.get("rule_start_regex", r"^(\d+\.\d+)(:| )(.+)")
     try:
         REGEX_RULE = re.compile(raw_regex)
-    except:
+    except re.error as e:
+        print(f"Regex error in config: {e}")
         REGEX_RULE = re.compile(r"^(\d+\.\d+)(:| )(.+)")
 
     SEVERITY_MAP = config.get("severity_keywords", {})
@@ -38,40 +39,58 @@ def analyser_pdf_cis(fichier_pdf):
 
     try:
         with pdfplumber.open(fichier_pdf) as pdf:
+            if not pdf.pages:
+                print("Warning: PDF has no pages.")
+                return []
+
+            total_pages = len(pdf.pages)
             # Infos globales (Page 1 seulement)
-            first_page_text = pdf.pages[0].extract_text() if pdf.pages else ""
+            first_page_text = pdf.pages[0].extract_text(x_tolerance=1, y_tolerance=3) or ""
             db_type = detecter_technologie(first_page_text)
             match_ver = re.search(r"v(\d+\.\d+(\.\d+)?)", first_page_text)
-            version_cis = match_ver.group(1) if match_ver else "1.0"
+            version_cis = match_ver.group(1) if match_ver else "1.0.0"
 
             regle_actuelle = None
             section_en_cours = DEFAULT_SECTION
 
-            # 2. Lecture optimisée
+            print(f"Total pages to process: {total_pages}")
             for i, page in enumerate(pdf.pages):
-                texte = page.extract_text()
-                if not texte: continue
+                # Mise à jour de la barre de progression
+                if progress_callback:
+                    try:
+                        progress_callback((i + 1) / total_pages)
+                    except Exception as e:
+                        print(f"Error in progress callback: {e}")
+
+                print(f"  - Processing page {i + 1}/{total_pages}...")
+                try:
+                    texte = page.extract_text(x_tolerance=1, y_tolerance=3)
+                    if not texte:
+                        print(f"    - Page {i + 1} has no extractable text.")
+                        continue
+                except Exception as e:
+                    print(f"    - Error extracting text from page {i + 1}: {e}")
+                    continue
 
                 lignes = texte.split('\n')
 
                 for ligne in lignes:
                     ligne = ligne.strip()
-                    if not ligne: continue
+                    if not ligne:
+                        continue
 
                     match = REGEX_RULE.search(ligne)
 
                     if match:
-                        # Sauvegarde de la précédente
-                        if regle_actuelle and regle_actuelle["severity"] != "Unknown":
+                        if regle_actuelle and regle_actuelle.get("severity") != "Unknown":
                             regle_actuelle["title"] = regle_actuelle["title"].strip()
+                            for key, value in regle_actuelle.items():
+                                if isinstance(value, str):
+                                    regle_actuelle[key] = value.strip()
                             resultats.append(regle_actuelle)
 
-                        try:
-                            ctrl_id = match.group(1)
-                            title = match.group(match.lastindex).strip()
-                        except:
-                            ctrl_id = "Unknown"
-                            title = "Unknown"
+                        ctrl_id = match.group(1)
+                        title = match.group(match.lastindex).strip()
 
                         regle_actuelle = {
                             "database_type": db_type,
@@ -82,23 +101,19 @@ def analyser_pdf_cis(fichier_pdf):
                             "page": i + 1
                         }
                         
-                        # Init des sections vides pour éviter les KeyError plus tard
-                        regle_actuelle[DEFAULT_SECTION] = ""
                         for sec_key in SECTIONS_MAP.values():
                             if sec_key != "ignore":
                                 regle_actuelle[sec_key] = ""
-                        
+                        regle_actuelle[DEFAULT_SECTION] = ""
                         section_en_cours = DEFAULT_SECTION
                         continue
 
                     if regle_actuelle:
-                        # Analyse Mots-clés (Sévérité)
-                        # On ne cherche la sévérité que si elle est encore Unknown
                         if regle_actuelle["severity"] == "Unknown":
                             for sev_key, sev_val in SEVERITY_MAP.items():
                                 if sev_key in ligne:
                                     regle_actuelle["severity"] = sev_val
-                                    break 
+                                    break
 
                         found_section = False
                         for keyword, target_field in SECTIONS_MAP.items():
@@ -110,19 +125,23 @@ def analyser_pdf_cis(fichier_pdf):
                         if found_section:
                             continue
 
-                        # Ajout de contenu
                         if section_en_cours != "ignore":
-                            # Filtre léger (ignore les numéros de page isolés)
                             if not ligne.startswith("Page ") and not ligne.startswith("CIS Benchmark"):
                                 regle_actuelle[section_en_cours] += " " + ligne
 
-            # Ajout de la dernière règle
-            if regle_actuelle and regle_actuelle["severity"] != "Unknown":
+            if regle_actuelle and regle_actuelle.get("severity") != "Unknown":
                 regle_actuelle["title"] = regle_actuelle["title"].strip()
+                for key, value in regle_actuelle.items():
+                    if isinstance(value, str):
+                        regle_actuelle[key] = value.strip()
                 resultats.append(regle_actuelle)
+        
+        print(f"Finished analysis for {getattr(fichier_pdf, 'name', 'unknown file')}. Found {len(resultats)} rules.")
 
     except Exception as e:
-        st.error(f"Erreur technique : {e}")
+        print(f"An unexpected error occurred in analyser_pdf_cis: {e}")
+        import traceback
+        traceback.print_exc()
         return []
 
     return resultats
