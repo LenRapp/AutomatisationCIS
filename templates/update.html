@@ -1,0 +1,111 @@
+{% extends "layout.html" %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-md-8">
+        <div class="card">
+            <div class="card-header bg-primary text-white">
+                <h4>🔄 Générateur de Mise à Jour (2026)</h4>
+            </div>
+            <div class="card-body">
+                <form id="updateForm">
+                    <div class="row mb-3">
+                        <div class="col-md-6">
+                            <label class="form-label">Année Source</label>
+                            <input type="text" class="form-control" name="old_year" value="2025">
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label">Nouvelle Année</label>
+                            <input type="text" class="form-control" name="new_year" value="2026">
+                        </div>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label class="form-label">1. Fichier Source (Ancien Benchmark - PDF ou JSON)</label>
+                        <input class="form-control" type="file" name="source_file" accept=".pdf,.json" required>
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="form-label">2. Fichier Résumé (Modifications - JSON)</label>
+                        <input class="form-control" type="file" name="summary_file" accept=".json" required>
+                    </div>
+
+                    <button type="submit" class="btn btn-primary w-100" id="btnSubmit">
+                        Générer la nouvelle version
+                    </button>
+                </form>
+
+                <!-- Zone de progression -->
+                <div id="progressArea" class="mt-4" style="display:none;">
+                    <h5>Traitement en cours...</h5>
+                    <div class="progress" style="height: 25px;">
+                        <div id="progressBar" class="progress-bar progress-bar-striped progress-bar-animated bg-success" 
+                             role="progressbar" style="width: 0%;">0%</div>
+                    </div>
+                    <p id="statusText" class="text-muted mt-2">Démarrage...</p>
+                </div>
+
+                <div id="errorArea" class="alert alert-danger mt-3" style="display:none;"></div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+$(document).ready(function() {
+    $('#updateForm').on('submit', function(e) {
+        e.preventDefault();
+        
+        var formData = new FormData(this);
+        
+        $('#btnSubmit').prop('disabled', true);
+        $('#progressArea').show();
+        $('#progressBar').css('width', '0%').text('0%');
+        $('#errorArea').hide();
+
+        $.ajax({
+            url: '/api/update',
+            type: 'POST',
+            data: formData,
+            contentType: false,
+            processData: false,
+            success: function(response) {
+                pollProgress(response.task_id);
+            },
+            error: function(err) {
+                $('#errorArea').text("Erreur lors de l'envoi.").show();
+                $('#btnSubmit').prop('disabled', false);
+                $('#progressArea').hide();
+            }
+        });
+    });
+
+    function pollProgress(taskId) {
+        var interval = setInterval(function() {
+            $.get('/api/progress/' + taskId, function(data) {
+                if (data.status === 'not_found' || data.error) {
+                    clearInterval(interval);
+                    $('#errorArea').text(data.error || "Erreur inconnue").show();
+                    return;
+                }
+
+                var p = data.progress;
+                $('#progressBar').css('width', p + '%').text(p + '%');
+                
+                if (p < 25) $('#statusText').text("Analyse Source...");
+                else if (p < 90) $('#statusText').text("Application des mises à jour...");
+                else $('#statusText').text("Génération Excel...");
+
+                if (data.redirect) {
+                    clearInterval(interval);
+                    $('#statusText').text("Terminé !");
+                    window.location.href = data.redirect;
+                }
+            });
+        }, 1000);
+    }
+});
+</script>
+{% endblock %}

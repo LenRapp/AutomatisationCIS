@@ -1,0 +1,72 @@
+{% extends "layout.html" %}
+
+{% block content %}
+<div class="text-center mb-5">
+    <h2 class="text-success">✅ Génération Terminée avec Succès !</h2>
+    <p class="lead">Votre nouveau Benchmark est prêt.</p>
+</div>
+
+<div class="row text-center mb-5">
+    <div class="col-md-3">
+        <div class="card text-white bg-primary mb-3">
+            <div class="card-header">Mises à jour</div>
+            <div class="card-body">
+                <h1 class="card-title">{{ stats.updated }}</h1>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card text-white bg-info mb-3">
+            <div class="card-header">Année Remplacée</div>
+            <div class="card-body">
+                <h1 class="card-title">{{ stats.year_replaced }}</h1>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card text-white bg-success mb-3">
+            <div class="card-header">Ajouts</div>
+            <div class="card-body">
+                <h1 class="card-title">{{ stats.added }}</h1>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card text-white bg-danger mb-3">
+            <div class="card-header">Suppressions</div>
+            <div class="card-body">
+                <h1 class="card-title">{{ stats.deleted }}</h1>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row justify-content-center">
+    <div class="col-md-5 mb-3">
+        <div class="card h-100">
+            <div class="card-body text-center">
+                <h4 class="card-title">Format JSON</h4>
+                <p class="card-text">Format technique pour intégration.</p>
+                <a href="/download/final_json/{{ task_id }}" class="btn btn-outline-primary btn-lg w-100">
+                    📥 Télécharger JSON
+                </a>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-5 mb-3">
+        <div class="card h-100 border-success">
+            <div class="card-body text-center">
+                <h4 class="card-title text-success">Format Excel</h4>
+                <p class="card-text">Format lisible pour les équipes.</p>
+                <a href="/download/excel/{{ task_id }}" class="btn btn-success btn-lg w-100">
+                    📊 Télécharger Excel
+                </a>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="text-center mt-4">
+    <a href="/update" class="btn btn-link">Générer une autre version</a>
+</div>
+{% endblock %}
