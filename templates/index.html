@@ -1,0 +1,32 @@
+{% extends "layout.html" %}
+
+{% block content %}
+<div class="jumbotron text-center mt-5">
+    <h1 class="display-4">Automatisation des Benchmarks CIS</h1>
+    <p class="lead">Analysez, comparez et mettez à jour vos règles de sécurité facilement.</p>
+    <hr class="my-4">
+    <div class="row">
+        <div class="col-md-4">
+            <div class="card p-3">
+                <h3>📄 Extraction</h3>
+                <p>Convertissez un PDF CIS en format JSON structuré.</p>
+                <a href="/extraction" class="btn btn-primary">Lancer</a>
+            </div>
+        </div>
+        <div class="col-md-4">
+            <div class="card p-3">
+                <h3>🚀 Comparaison</h3>
+                <p>Comparez deux versions pour voir les différences.</p>
+                <button class="btn btn-secondary" disabled>Bientôt disponible</button>
+            </div>
+        </div>
+        <div class="col-md-4">
+            <div class="card p-3">
+                <h3>🔄 Mise à jour</h3>
+                <p>Générez le nouveau Benchmark 2026 automatiquement.</p>
+                <button class="btn btn-secondary" disabled>Bientôt disponible</button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
