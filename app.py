@@ -3,9 +3,7 @@ import json
 import os
 import tempfile
 import io
-import pandas as pd  # <--- AJOUT MAJEUR POUR EXCEL
-
-# --- 1. IMPORTS DES MODULES (Extraction, Comparaison, Updater) ---
+import pandas as pd
 
 from src.extraction import analyser_pdf_cis
 
@@ -22,7 +20,6 @@ except ImportError:
 try:
     from src.updater import load_json_file, save_json_file, update_year_in_text, run_dynamic_update
     
-    # Alias pour compatibilité avec le reste du code
     run_updater = run_dynamic_update
     UPDATER_AVAILABLE = True
 except ImportError:
@@ -33,11 +30,8 @@ except ImportError:
     run_updater = None
     UPDATER_AVAILABLE = False
 
-# --- 2. CONFIGURATION DE LA PAGE ---
 st.set_page_config(page_title="Automatisation CIS", page_icon="🛡️", layout="wide")
 
-
-# --- 3. FONCTIONS UTILITAIRES (Communes) ---
 
 def clean_text(text):
     """Nettoie le texte pour l'affichage."""
@@ -131,8 +125,6 @@ def convert_json_to_excel(json_path, excel_path):
         return False, str(e)
 
 
-# --- 4. LOGIQUE COMPARATEUR ---
-
 def compare_data_adapter(data1, data2):
     """Adapte la sortie de compare_rules pour l'affichage Streamlit."""
     if not compare_rules: return None
@@ -174,7 +166,6 @@ def get_cached_extraction(file_content, file_name, _progress_callback=None):
     virtual_file.name = file_name
     raw_data = analyser_pdf_cis(virtual_file, progress_callback=_progress_callback)
     
-    # DÉDUPLICATION INTELLIGENTE (Sommaire vs Contenu)
     # On garde la version avec le numéro de page le plus élevé (le vrai contenu est après le sommaire)
     unique_rules = {}
     for rule in raw_data:
@@ -197,12 +188,6 @@ def process_file_wrapper(uploaded_file, progress_callback=None):
     return get_cached_extraction(uploaded_file.getvalue(), uploaded_file.name, _progress_callback=progress_callback)
 
 
-# --- 5. LOGIQUE UPDATER (Backend) ---
-# La fonction run_dynamic_update a été supprimée et remplacée par l'import de run_updater de src.updater
-
-
-# --- 6. MAIN & INTERFACE ---
-
 def main():
     st.title("🛡️ Automatisation & Maintenance CIS")
 
@@ -213,9 +198,7 @@ def main():
 
     st.sidebar.divider()
 
-    # ---------------------------------------------------------
     # MODE 1 : ANALYSE PDF
-    # ---------------------------------------------------------
     if mode == "📄 Analyse PDF (Extraction/Comparaison)":
 
         if 'comparison_data' not in st.session_state:
@@ -339,7 +322,7 @@ def main():
 
                 st.download_button(
                     "📥 Télécharger le Résumé (pour Mise à jour)",
-                    json.dumps(res, indent=4),  # <--- Juste "res", PAS "res['modified']"
+                    json.dumps(res, indent=4),  # Juste "res", PAS "res['modified']"
                     "resume_complet.json",
                     "application/json"
                 )
@@ -383,9 +366,7 @@ def main():
                                     st.text(clean_text(vals.get('new', 'N/A')))
                                 st.divider()
 
-    # ---------------------------------------------------------
     # MODE 2 : GÉNÉRATEUR BENCHMARK (JSON + EXCEL)
-    # ---------------------------------------------------------
     elif mode == "🔄 Générateur de Benchmark (Mise à jour)":
         st.header("Générateur de Benchmark Mis à Jour")
         st.markdown("Générez une nouvelle version (ex: 2026) à partir d'un ancien fichier et d'un résumé.")

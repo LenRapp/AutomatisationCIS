@@ -1,16 +1,6 @@
 import json
 
 def compare_rules(old_rules, new_rules):
-    """
-    Compare deux listes de règles CIS pour identifier les ajouts, suppressions et modifications.
-
-    Args:
-        old_rules (list): La liste des anciennes règles (dictionnaires).
-        new_rules (list): La liste des nouvelles règles (dictionnaires).
-
-    Returns:
-        dict: Un dictionnaire contenant les règles 'added', 'deleted', et 'modified'.
-    """
     old_rules_dict = {rule['control_id']: rule for rule in old_rules}
     new_rules_dict = {rule['control_id']: rule for rule in new_rules}
 

@@ -20,10 +20,6 @@ def detecter_technologie(text_page_garde):
     return "Technologie Inconnue"
 
 def analyser_pdf_cis(fichier_pdf, progress_callback=None):
-    # This function is now designed to be thread-safe for use with Streamlit
-    # by avoiding direct calls to Streamlit UI elements (e.g., st.error).
-    # Errors should be returned or raised to be handled by the calling thread.
-    
     print(f"Starting analysis for file: {getattr(fichier_pdf, 'name', 'unknown file')}")
     
     config = load_config()
@@ -143,9 +139,7 @@ def analyser_pdf_cis(fichier_pdf, progress_callback=None):
         print(f"Finished analysis for {getattr(fichier_pdf, 'name', 'unknown file')}. Found {len(resultats)} rules.")
 
     except Exception as e:
-        # Log error to console, as we are in a thread
         print(f"An unexpected error occurred in analyser_pdf_cis: {e}")
-        # Potentially log traceback
         import traceback
         traceback.print_exc()
         return []
