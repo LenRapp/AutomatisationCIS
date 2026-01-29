@@ -106,10 +106,8 @@ def process_extraction():
                 if tid in progress_status:
                     progress_status[tid]["progress"] = int(p * 100)
 
-            # src/extraction.py utilise pdfplumber.open(fichier_pdf) qui accepte un path.
             raw_data = analyser_pdf_cis(fpath, progress_callback=update_progress)
             
-            # --- LOGIQUE DE DÉDUPLICATION (Sommaire vs Contenu) ---
             # On ne garde que l'occurrence avec le numéro de page le plus élevé
             unique_rules = {}
             for rule in raw_data:
@@ -125,7 +123,7 @@ def process_extraction():
             
             final_data = list(unique_rules.values())
 
-            # TRI OPTIONNEL : Pour que "1.10" soit après "1.9" et pas après "1.1"
+            # Pour que "1.10" soit après "1.9" et pas après "1.1"
             try:
                 final_data.sort(key=lambda x: [int(p) if p.isdigit() else p for p in x.get('control_id', '').split('.')])
             except:
@@ -210,7 +208,7 @@ def download_diff(task_id):
     return "Fichier introuvable", 404
 
 
-# --- 2. COMPARAISON ---
+# COMPARAISON
 
 @app.route('/comparaison')
 def page_comparaison():
@@ -237,7 +235,7 @@ def process_comparaison():
 
     def run_compare(tid, p1, p2):
         try:
-            # --- 1. Extraction Fichier 1 (0% -> 50%) ---
+            # Extraction Fichier 1 (0% -> 50%)
             def update_p1(p):
                 if tid in progress_status:
                     progress_status[tid]["progress"] = int(p * 50)
@@ -252,7 +250,7 @@ def process_comparaison():
                         d1[cid] = r
             list1 = list(d1.values())
 
-            # --- 2. Extraction Fichier 2 (50% -> 100%) ---
+            # Extraction Fichier 2 (50% -> 100%)
             def update_p2(p):
                 # On sature à 99 pour laisser un peu de place au calcul final si besoin, 
                 # ou on va jusqu'à 100 si on finit ici.
@@ -269,7 +267,7 @@ def process_comparaison():
                         d2[cid] = r
             list2 = list(d2.values())
 
-            # --- 3. Comparaison Finale ---
+            # Comparaison Finale
             if compare_rules:
                 diff = compare_rules(list1, list2)
                 
@@ -313,7 +311,7 @@ def result_comparaison(task_id):
     return render_template('result_comparaison.html', diff=data, stats=stats, task_id=task_id)
 
 
-# --- 3. MISE À JOUR (UPDATER) ---
+# MISE À JOUR
 
 @app.route('/update')
 def page_update():
@@ -343,7 +341,7 @@ def process_update():
 
     def run_update_task(tid, p_src, p_summ, p_out, p_xls, oy, ny):
         try:
-            # ÉTAPE 1: Conversion Source si PDF (0-25%)
+            #Conversion Source si PDF (0-25%)
             actual_src_json = p_src
             
             if p_src.lower().endswith('.pdf'):
@@ -366,7 +364,7 @@ def process_update():
             else:
                  if tid in progress_status: progress_status[tid]["progress"] = 25
 
-            # ÉTAPE 2: Mise à jour (25-90%)
+            # Mise à jour (25-90%)
             def update_p_upd(p):
                  # p de 0 à 1.0 -> map to 25-90
                  if tid in progress_status: progress_status[tid]["progress"] = 25 + int(p * 65)
@@ -378,7 +376,7 @@ def process_update():
                 with open(p_out + ".stats", 'w', encoding='utf-8') as f:
                     json.dump(stats, f)
             
-            # ÉTAPE 3: Excel (90-100%)
+            # Excel (90-100%)
             if tid in progress_status: progress_status[tid]["progress"] = 95
             convert_json_to_excel_flask(p_out, p_xls)
             

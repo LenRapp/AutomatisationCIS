@@ -198,7 +198,7 @@ def main():
 
     st.sidebar.divider()
 
-    # MODE 1 : ANALYSE PDF
+    #ANALYSE PDF
     if mode == "📄 Analyse PDF (Extraction/Comparaison)":
 
         if 'comparison_data' not in st.session_state:
@@ -272,7 +272,7 @@ def main():
 
             if res.get("single_mode"):
                 data = res["data"]
-                # TRI : On s'assure que l'ordre est correct (par ID)
+                #On s'assure que l'ordre est correct (par ID)
                 try:
                     data.sort(key=lambda x: [int(p) if p.isdigit() else p for p in x.get('control_id', '').split('.')])
                 except:
@@ -366,7 +366,7 @@ def main():
                                     st.text(clean_text(vals.get('new', 'N/A')))
                                 st.divider()
 
-    # MODE 2 : GÉNÉRATEUR BENCHMARK (JSON + EXCEL)
+    # GÉNÉRATEUR BENCHMARK (JSON + EXCEL)
     elif mode == "🔄 Générateur de Benchmark (Mise à jour)":
         st.header("Générateur de Benchmark Mis à Jour")
         st.markdown("Générez une nouvelle version (ex: 2026) à partir d'un ancien fichier et d'un résumé.")
@@ -389,7 +389,7 @@ def main():
                     p_src = None; p_res = None; p_out = None; p_excel = None; p_pdf_temp = None
 
                     try:
-                        # ÉTAPE 1 : 25% -> 50%
+                        #25% -> 50%
                         prog_update.progress(25, text="25% - Analyse du fichier source...")
 
                         def update_p_src(p):
@@ -410,7 +410,7 @@ def main():
                         else:
                             p_src = save_uploaded_file_temp(src_file)
 
-                        # ÉTAPE 2 : 50%
+                        #50%
                         prog_update.progress(50, text="50% - Préparation du fichier résumé...")
                         p_res = save_uploaded_file_temp(res_file)
                         fd, p_out = tempfile.mkstemp(suffix=".json")
@@ -418,7 +418,7 @@ def main():
                         fd_xls, p_excel = tempfile.mkstemp(suffix=".xlsx")
                         os.close(fd_xls)
 
-                        # ÉTAPE 3 : 75%
+                        # 75%
                         if p_src and p_res:
                             def update_p_upd(p):
                                 # 75% -> 95%
@@ -438,7 +438,7 @@ def main():
                             prog_update.progress(95, text="95% - Conversion Excel...")
                             success_xls, msg_xls = convert_json_to_excel(p_out, p_excel)
 
-                            # ÉTAPE 4 : 100%
+                            # 100%
                             prog_update.progress(100, text="100% - Terminé !")
                             st.balloons()
                             st.success("✅ Processus terminé avec succès !")
