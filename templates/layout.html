@@ -6,14 +6,109 @@
     <title>Automatisation CIS</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <style>
-        body { background-color: #f8f9fa; }
-        .card { margin-top: 20px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
-        .navbar { margin-bottom: 20px; }
+        body { 
+            background-color: #0e1117; 
+            color: #fafafa;
+            font-family: "Source Sans Pro", sans-serif;
+        }
+        .navbar { 
+            background-color: #262730 !important; 
+            box-shadow: 0 4px 6px rgba(0,0,0,0.3);
+        }
+        .navbar-brand { font-weight: bold; color: #fff !important; }
+        .nav-link { color: #d0d0d0 !important; }
+        .nav-link:hover { color: #fff !important; }
+        
+        .card { 
+            background-color: #262730; 
+            border: 1px solid #41444e;
+            color: #fff;
+            margin-top: 20px; 
+            box-shadow: 0 4px 6px rgba(0,0,0,0.2); 
+        }
+        .card-header {
+            background-color: #31333F !important;
+            border-bottom: 1px solid #41444e;
+            font-weight: bold;
+        }
+        
+        /* Inputs et contrôles en mode sombre */
+        .form-control {
+            background-color: #0e1117;
+            border: 1px solid #41444e;
+            color: #fff;
+        }
+        .form-control:focus {
+            background-color: #1a1c24;
+            color: #fff;
+            border-color: #ff4b4b; /* Touche rouge/rose Streamlit */
+            box-shadow: none;
+        }
+        
+        /* Boutons */
+        .btn-primary {
+            background-color: #ff4b4b;
+            border-color: #ff4b4b;
+        }
+        .btn-primary:hover {
+            background-color: #ff2b2b;
+            border-color: #ff2b2b;
+        }
+        
+        /* Accordions et Tabs */
+        .accordion-item {
+            background-color: #262730;
+            border: 1px solid #41444e;
+            color: #fff;
+        }
+        .accordion-button {
+            background-color: #31333F;
+            color: #fff;
+        }
+        .accordion-button:not(.collapsed) {
+            background-color: #3d3f4d;
+            color: #fff;
+            box-shadow: none;
+        }
+        .list-group-item {
+            background-color: #262730;
+            color: #fff;
+            border-color: #41444e;
+        }
+        
+        /* Tables */
+        .table { color: #fff; }
+        .table-light { 
+            background-color: #31333F; 
+            color: #fff; 
+            border-color: #41444e;
+        }
+        .table-bordered { border-color: #41444e; }
+        
+        /* Onglets */
+        .nav-tabs .nav-link { color: #d0d0d0; }
+        .nav-tabs .nav-link.active {
+            background-color: #262730;
+            color: #ff4b4b;
+            border-color: #41444e #41444e #262730;
+        }
+        
+        /* Code blocks */
+        pre {
+            background-color: #0e1117;
+            border: 1px solid #41444e;
+            color: #eee;
+            padding: 10px;
+            border-radius: 5px;
+        }
+        .bg-light { background-color: #31333F !important; color: #fff !important; }
+
+        hr { border-top: 1px solid #41444e; }
     </style>
 </head>
 <body>
 
-<nav class="navbar navbar-expand-lg navbar-dark bg-dark">
+<nav class="navbar navbar-expand-lg navbar-dark">
   <div class="container">
     <a class="navbar-brand" href="/">🛡️ CIS Automator</a>
     <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav">
